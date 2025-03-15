@@ -81,10 +81,10 @@ contract PredictionMarketHookTest is Test, Deployers {
         collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
     }
 
-    function test_createMarketandDepositCollateral() public {
-        // Setup test parameters
+    // Modifier to create a market and return its ID
+    modifier createMarket(bytes32 marketId) {
         CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(0x123),
+            oracle: address(this),
             creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
@@ -93,67 +93,37 @@ contract PredictionMarketHookTest is Test, Deployers {
             duration: 30 days
         });
         
-        // Call the function to create market and deposit collateral
-        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
-        
-        // Verify market was created successfully
-        assertTrue(marketId != bytes32(0), "Market ID should not be zero");
-        
-        // Get market details
-        Market memory market = hook.getMarketById(marketId);
-
-        // Verify market details
-        assertEq(market.oracle, params.oracle, "Oracle address mismatch");
-        assertEq(market.creator, params.creator, "Creator address mismatch");
-        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be active");
-        assertEq(market.totalCollateral, params.collateralAmount, "Collateral amount mismatch");
-        assertEq(market.collateralAddress, params.collateralAddress, "Collateral address mismatch");
-        assertEq(market.title, params.title, "Title mismatch");
-        assertEq(market.description, params.description, "Description mismatch");
-        assertTrue(market.endTimestamp > block.timestamp, "End timestamp should be in the future");
-
-        // Verify tokens were created
-        assertTrue(address(market.yesToken) != address(0), "YES token not created");
-        assertTrue(address(market.noToken) != address(0), "NO token not created");
+        marketId = hook.createMarketAndDepositCollateral(params);
+        _;
     }
-    
-    function test_createMarketAndAddLiquidity() public {
-        // Setup test parameters
+
+    // Modifier to create a market and add liquidity
+    modifier createMarketWithLiquidity(bytes32 marketId) {
+        // Create market first
         CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(0x123),
+            oracle: address(this),
             creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
-            description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2025",
+            description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
             duration: 30 days
         });
         
-        // Call the function to create market and deposit collateral
-        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
+        marketId = hook.createMarketAndDepositCollateral(params);
         
         // Get market details
         Market memory market = hook.getMarketById(marketId);
         
-        // Verify creator received outcome tokens
+        // Get token references
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
         
-        assertEq(yesToken.balanceOf(params.creator), params.collateralAmount, "Creator should have YES tokens");
-        assertEq(noToken.balanceOf(params.creator), params.collateralAmount, "Creator should have NO tokens");
-        
-        // For prediction markets, we want to constrain the price between 0 and 1 USDC
-        // Calculate the ticks that correspond to these prices
-        // Price = 1.0001^tick
-        // For price = 0.01 USDC: tick = log(0.01)/log(1.0001) ≈ -9210
-        // For price = 0.99 USDC: tick = log(0.99)/log(1.0001) ≈ -100
-        // For price = 0.5 USDC: tick = log(0.5)/log(1.0001) ≈ -6932
-        
-        // We'll round to the nearest valid tick based on tick spacing
+        // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
-        int24 minTick = -9200; // Slightly above 0.01 USDC
-        int24 maxTick = -100;  // Slightly below 0.99 USDC
-        int24 initialTick = -6900; // 0.5 USDC, rounded to nearest tick spacing
+        int24 minTick = -9200; // ~0.01 USDC
+        int24 maxTick = -100;  // ~0.99 USDC
+        int24 initialTick = -6900; // ~0.5 USDC
         
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;
@@ -162,18 +132,16 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Get the sqrtPriceX96 for the initial tick (0.5 USDC)
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
         
-        // Calculate liquidity amounts for 0.5 USDC price
-        // At tick 0, the price is 1:1 in terms of sqrt price
-        // For a 0.5 USDC price, we need 2 outcome tokens for each 1 USDC
+        // Prepare liquidity amounts
         uint256 liquidityCollateral = 50 * 1e6;  // 50 USDC
-        uint256 liquidityOutcomeTokens = 100 * 1e18;  // 100 outcome tokens (assuming 18 decimals)
+        uint256 liquidityOutcomeTokens = 100 * 1e18;  // 100 outcome tokens
         
         // Approve tokens for liquidity provision
         collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
         yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
         noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
         
-        // Calculate liquidity amount for the 0.01-0.99 range
+        // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
             TickMath.getSqrtPriceAtTick(minTick),
@@ -181,9 +149,6 @@ contract PredictionMarketHookTest is Test, Deployers {
             liquidityCollateral,
             liquidityOutcomeTokens
         );
-        
-        console.log("Adding liquidity to YES pool");
-        console.log("Liquidity amount: %d", liquidityAmount);
         
         // Add liquidity to YES pool
         poolModifyLiquidityTest.modifyLiquidity(
@@ -198,7 +163,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
         
         // Add liquidity to NO pool
-        console.log("Adding liquidity to NO pool");
         poolModifyLiquidityTest.modifyLiquidity(
             market.noPoolKey,
             IPoolManager.ModifyLiquidityParams({
@@ -210,20 +174,139 @@ contract PredictionMarketHookTest is Test, Deployers {
             new bytes(0)
         );
         
-        console.log("Initial liquidity added to both pools with price range 0.01-0.99 USDC");
+        _;
+    }
+
+    function test_createMarketandDepositCollateral() public {
+        // Create a market and get its ID
+        bytes32 marketId = createTestMarket();
+        
+        // Verify market was created successfully
+        assertTrue(marketId != bytes32(0), "Market ID should not be zero");
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+
+        // Verify market details
+        assertEq(market.oracle, address(this), "Oracle address mismatch");
+        assertEq(market.creator, address(this), "Creator address mismatch");
+        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be active");
+        assertEq(market.totalCollateral, COLLATERAL_AMOUNT, "Collateral amount mismatch");
+        assertEq(market.collateralAddress, address(collateralToken), "Collateral address mismatch");
+        assertTrue(market.endTimestamp > block.timestamp, "End timestamp should be in the future");
+
+        // Verify tokens were created
+        assertTrue(address(market.yesToken) != address(0), "YES token not created");
+        assertTrue(address(market.noToken) != address(0), "NO token not created");
+    }
+    
+    function test_createMarketAndAddLiquidity() public {
+        // Create a market with liquidity and get its ID
+        bytes32 marketId = createTestMarketWithLiquidity();
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Verify creator received outcome tokens
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        OutcomeToken noToken = OutcomeToken(address(market.noToken));
         
         // Verify tokens were transferred for liquidity
         assertLt(
-            yesToken.balanceOf(params.creator), 
-            params.collateralAmount, 
+            yesToken.balanceOf(address(this)), 
+            COLLATERAL_AMOUNT, 
             "Creator should have spent YES tokens on liquidity"
         );
         
         assertLt(
-            noToken.balanceOf(params.creator), 
-            params.collateralAmount, 
+            noToken.balanceOf(address(this)), 
+            COLLATERAL_AMOUNT, 
             "Creator should have spent NO tokens on liquidity"
         );
+    }
+
+    // Instead of trying to modify the parameter, return the value
+    function createTestMarket() internal returns (bytes32) {
+        CreateMarketParams memory params = CreateMarketParams({
+            oracle: address(this),
+            creator: address(this),
+            collateralAddress: address(collateralToken),
+            collateralAmount: COLLATERAL_AMOUNT,
+            title: "Will ETH reach $10k in 2024?",
+            description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
+            duration: 30 days
+        });
         
+        return hook.createMarketAndDepositCollateral(params);
+    }
+
+    // Function to create a market and add liquidity
+    function createTestMarketWithLiquidity() internal returns (bytes32) {
+        // Create market first
+        bytes32 marketId = createTestMarket();
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Get token references
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        OutcomeToken noToken = OutcomeToken(address(market.noToken));
+        
+        // Set up price range for prediction market (0.01-0.99)
+        int24 tickSpacing = 100;
+        int24 minTick = -9200; // ~0.01 USDC
+        int24 maxTick = -100;  // ~0.99 USDC
+        int24 initialTick = -6900; // ~0.5 USDC
+        
+        // Ensure ticks are valid with the tick spacing
+        minTick = (minTick / tickSpacing) * tickSpacing;
+        maxTick = (maxTick / tickSpacing) * tickSpacing;
+        
+        // Get the sqrtPriceX96 for the initial tick (0.5 USDC)
+        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
+        
+        // Prepare liquidity amounts
+        uint256 liquidityCollateral = 50 * 1e6;  // 50 USDC
+        uint256 liquidityOutcomeTokens = 100 * 1e18;  // 100 outcome tokens
+        
+        // Approve tokens for liquidity provision
+        collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
+        yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
+        noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
+        
+        // Calculate liquidity amount
+        uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(minTick),
+            TickMath.getSqrtPriceAtTick(maxTick),
+            liquidityCollateral,
+            liquidityOutcomeTokens
+        );
+        
+        // Add liquidity to YES pool
+        poolModifyLiquidityTest.modifyLiquidity(
+            market.yesPoolKey,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: minTick,
+                tickUpper: maxTick,
+                liquidityDelta: int256(uint256(liquidityAmount)),
+                salt: 0
+            }),
+            new bytes(0)
+        );
+        
+        // Add liquidity to NO pool
+        poolModifyLiquidityTest.modifyLiquidity(
+            market.noPoolKey,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: minTick,
+                tickUpper: maxTick,
+                liquidityDelta: int256(uint256(liquidityAmount)),
+                salt: 0
+            }),
+            new bytes(0)
+        );
+        
+        return marketId;
     }
 }

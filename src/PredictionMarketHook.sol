@@ -58,6 +58,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     error AlreadyClaimed();
 
     event PoolCreated(PoolId poolId);
+    event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
 
     constructor(
         IPoolManager _poolManager,
@@ -278,7 +279,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     /// @notice Allows users to claim collateral based on their winning token holdings
     /// @param marketId The ID of the market
     function claimWinnings(bytes32 marketId) external {
-        Market memory market = _markets[marketId];
+        Market storage market = _markets[marketId];
         
         // Check market is resolved
         if (market.state != MarketState.Resolved) {
@@ -290,9 +291,40 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             revert AlreadyClaimed();
         }
 
-        // Get user's token balance based on winning outcome
-        // Calculate share of collateral based on unclaimed tokens
-
+        // Get the winning token based on the outcome
+        OutcomeToken winningToken = market.outcome ? market.yesToken : market.noToken;
+        
+        // Get user's balance of the winning token
+        uint256 winningTokenBalance = winningToken.balanceOf(msg.sender);
+        
+        // Ensure user has tokens to claim
+        if (winningTokenBalance == 0) {
+            revert NoTokensToClaim();
+        }
+        
+        // Calculate amount to claim (1:1 ratio with collateral)
+        uint256 claimAmount = winningTokenBalance;
+        
+        // Ensure we don't exceed the total collateral
+        uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
+        if (claimAmount > remainingCollateral) {
+            claimAmount = remainingCollateral;
+        }
+        
+        // Burn the winning tokens
+        winningToken.burnFrom(msg.sender, claimAmount);
+        
+        // Transfer collateral to the user
+        IERC20(market.collateralAddress).transfer(msg.sender, claimAmount);
+        
+        // Update claimed tokens amount
+        _claimedTokens[marketId] += claimAmount;
+        
+        // Mark user as claimed
+        _hasClaimed[marketId][msg.sender] = true;
+        
+        // Emit event
+        emit WinningsClaimed(marketId, msg.sender, claimAmount);
     }
 
     // Implement getters manually

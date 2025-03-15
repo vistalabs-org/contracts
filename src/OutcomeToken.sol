@@ -17,4 +17,17 @@ contract OutcomeToken is ERC20, Ownable {
         _mint(to, amount);
     }
 
+    /**
+     * @dev Burns tokens from a specific account, deducting from the caller's allowance
+     * @param account The account to burn tokens from
+     * @param amount The amount of tokens to burn
+     */
+    function burnFrom(address account, uint256 amount) external {
+        uint256 currentAllowance = allowance(account, msg.sender);
+        require(currentAllowance >= amount, "ERC20: burn amount exceeds allowance");
+        
+        _approve(account, msg.sender, currentAllowance - amount);
+        _burn(account, amount);
+    }
+
 }
