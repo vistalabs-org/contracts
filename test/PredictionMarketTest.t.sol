@@ -23,6 +23,7 @@ import {ERC20Mock} from "./utils/ERC20Mock.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
 contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -308,5 +309,169 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
         
         return marketId;
+    }
+
+    function test_buyYesSharesFromPool() public {
+        // Create a market with liquidity
+        bytes32 marketId = createTestMarketWithLiquidity();
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        
+        // Create a user who will buy YES tokens
+        address user = makeAddr("user");
+        
+        // Give user some collateral tokens
+        collateralToken.mint(user, 10 * 1e6); // 10 USDC
+        
+        // User transfers collateral to the test contract (which will perform the swap)
+        vm.prank(user);
+        collateralToken.transfer(address(this), 6 * 1e6); // Transfer 6 USDC to cover potential slippage
+        
+        // Record balances before swap
+        uint256 userCollateralBefore = collateralToken.balanceOf(user);
+        uint256 userYesTokensBefore = yesToken.balanceOf(user);
+        uint256 testContractYesTokensBefore = yesToken.balanceOf(address(this));
+        
+        console.log("User collateral before swap:", userCollateralBefore);
+        console.log("User YES tokens before swap:", userYesTokensBefore);
+        
+        // Approve the pool manager to use the test contract's tokens with a buffer for slippage
+        collateralToken.approve(address(poolSwapTest), 6 * 1e6);
+        
+        // In our pool setup, token0 is collateral and token1 is YES token
+        bool zeroForOne = true; // Swapping collateral (token0) for YES tokens (token1)
+        int256 amountSpecified = 5 * 1e6; // Swap 5 USDC
+        uint160 sqrtPriceLimitX96 = 4295128739 + 1; // Minimum valid sqrtPriceX96 + 1
+        
+        // Execute the swap using PoolSwapTest which handles the callbacks
+        BalanceDelta delta = poolSwapTest.swap(
+            market.yesPoolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            }),
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            new bytes(0)
+        );
+        
+        // Check how many YES tokens the test contract received
+        uint256 testContractYesTokensAfter = yesToken.balanceOf(address(this));
+        uint256 yesTokensReceived = testContractYesTokensAfter - testContractYesTokensBefore;
+        
+        console.log("Test contract YES tokens before:", testContractYesTokensBefore);
+        console.log("Test contract YES tokens after:", testContractYesTokensAfter);
+        console.log("YES tokens received by test contract:", yesTokensReceived);
+        
+        // Transfer the YES tokens to the user
+        yesToken.transfer(user, yesTokensReceived);
+        
+        // Record user balances after swap and transfer
+        uint256 userCollateralAfter = collateralToken.balanceOf(user);
+        uint256 userYesTokensAfter = yesToken.balanceOf(user);
+        
+        console.log("User collateral after swap:", userCollateralAfter);
+        console.log("User YES tokens after swap:", userYesTokensAfter);
+        console.log("YES tokens received by user:", userYesTokensAfter - userYesTokensBefore);
+        
+        // Verify the swap was successful
+        assertLt(userCollateralAfter, userCollateralBefore + 6 * 1e6, "User should have spent collateral");
+        assertGt(userYesTokensAfter, userYesTokensBefore, "User should have received YES tokens");
+    
+    }
+
+    // Helper function to perform a swap and return tokens received
+    function _performSwap(
+        bytes32 marketId, 
+        address user, 
+        uint256 collateralAmount
+    ) internal returns (uint256 tokensReceived) {
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        
+        // User transfers collateral to the test contract
+        vm.prank(user);
+        collateralToken.transfer(address(this), collateralAmount);
+        
+        // Record token balance before swap
+        uint256 testContractYesTokensBefore = yesToken.balanceOf(address(this));
+        
+        // Approve tokens for swap with a buffer for slippage (10% more than requested)
+        uint256 approvalAmount = collateralAmount * 110 / 100; // Add 10% buffer
+        collateralToken.approve(address(poolSwapTest), approvalAmount);
+        
+        // Execute the swap
+        poolSwapTest.swap(
+            market.yesPoolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: true, // Swapping collateral for YES tokens
+                amountSpecified: int256(collateralAmount),
+                sqrtPriceLimitX96: 4295128739 + 1 // Minimum valid sqrtPriceX96 + 1
+            }),
+            PoolSwapTest.TestSettings({
+                takeClaims: false,
+                settleUsingBurn: false
+            }),
+            new bytes(0)
+        );
+        
+        // Calculate tokens received
+        tokensReceived = yesToken.balanceOf(address(this)) - testContractYesTokensBefore;
+        
+        // Transfer tokens to user
+        yesToken.transfer(user, tokensReceived);
+        
+        return tokensReceived;
+    }
+
+    function test_resolveAndClaim() public {
+        // Create market with liquidity
+        bytes32 marketId = createTestMarketWithLiquidity();
+        Market memory market = hook.getMarketById(marketId);
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        
+        // Setup user
+        address user = makeAddr("user");
+        collateralToken.mint(user, 20 * 1e6); // 20 USDC instead of 10
+        
+        // Perform swap and get tokens received
+        uint256 yesTokensReceived = _performSwap(marketId, user, 6 * 1e6);
+        console.log("YES tokens received by user:", yesTokensReceived);
+        
+        // Record balances before claiming
+        uint256 userCollateralBefore = collateralToken.balanceOf(user);
+        
+        // Oracle resolves the market as YES
+        hook.resolveMarket(marketId, true);
+        
+        // User claims winnings
+        vm.startPrank(user);
+        yesToken.approve(address(hook), yesTokensReceived);
+        hook.claimWinnings(marketId);
+        
+        // Verify claim was successful
+        uint256 userCollateralAfter = collateralToken.balanceOf(user);
+        uint256 collateralReceived = userCollateralAfter - userCollateralBefore;
+        
+        console.log("Collateral received from claim:", collateralReceived);
+        
+        // Verify token burning and collateral received
+        assertEq(yesToken.balanceOf(user), 0, "All YES tokens should be burned");
+        assertEq(collateralReceived, yesTokensReceived / 1e12, "User should receive 1 USDC per YES token");
+        
+        // Verify user is marked as claimed
+        assertTrue(hook.hasClaimed(marketId, user), "User should be marked as claimed");
+        
+        // Try to claim again (should revert)
+        vm.expectRevert(PredictionMarketHook.AlreadyClaimed.selector);
+        hook.claimWinnings(marketId);
+        
+        vm.stopPrank();
     }
 }

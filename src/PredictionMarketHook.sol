@@ -285,36 +285,44 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         if (market.state != MarketState.Resolved) {
             revert MarketNotResolved();
         }
-
-        // Check if user has already claimed
+        
+        // Check user hasn't already claimed
         if (_hasClaimed[marketId][msg.sender]) {
             revert AlreadyClaimed();
         }
-
-        // Get the winning token based on the outcome
-        OutcomeToken winningToken = market.outcome ? market.yesToken : market.noToken;
         
-        // Get user's balance of the winning token
-        uint256 winningTokenBalance = winningToken.balanceOf(msg.sender);
+        // Determine which token is the winning token
+        address winningToken;
+        if (market.outcome) {
+            // YES outcome
+            winningToken = address(market.yesToken);
+        } else {
+            // NO outcome
+            winningToken = address(market.noToken);
+        }
+        
+        // Get user's token balance
+        uint256 tokenBalance = OutcomeToken(winningToken).balanceOf(msg.sender);
         
         // Ensure user has tokens to claim
-        if (winningTokenBalance == 0) {
-            revert NoTokensToClaim();
-        }
+        require(tokenBalance > 0, "No tokens to claim");
         
-        // Calculate amount to claim (1:1 ratio with collateral)
-        uint256 claimAmount = winningTokenBalance;
+        // Calculate collateral to return (accounting for decimal differences)
+        // YES/NO tokens have 18 decimals, collateral might have different decimals
+        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        uint256 decimalAdjustment = 10**(18 - collateralDecimals);
         
-        // Ensure we don't exceed the total collateral
+        // Calculate claim amount
+        uint256 claimAmount = tokenBalance / decimalAdjustment;
+        
+        // Ensure there's enough collateral left to claim
         uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
-        if (claimAmount > remainingCollateral) {
-            claimAmount = remainingCollateral;
-        }
+        require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
         
         // Burn the winning tokens
-        winningToken.burnFrom(msg.sender, claimAmount);
+        OutcomeToken(winningToken).burnFrom(msg.sender, tokenBalance);
         
-        // Transfer collateral to the user
+        // Transfer collateral to user
         IERC20(market.collateralAddress).transfer(msg.sender, claimAmount);
         
         // Update claimed tokens amount
