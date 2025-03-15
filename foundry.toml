@@ -9,4 +9,9 @@ remappings = [
     "@eigenlayer-middleware/src/=lib/eigenlayer-middleware/src/",
 ]
 
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+# Automatically use the Solidity version specified in each file
+auto_detect_solc = true
+evm_version = "cancun"
+
+# Ignore specific warnings
+ignored_error_codes = [8760]

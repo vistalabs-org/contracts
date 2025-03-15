@@ -1,0 +1,15 @@
+Bootstrap: docker
+From: ghcr.io/foundry-rs/foundry:latest
+
+%environment
+    export LC_ALL=C
+
+%runscript
+    exec "$@"
+
+%help
+    This container provides Foundry for Ethereum smart contract development.
+    
+    Usage:
+    - Build: apptainer build foundry.sif Apptainer.def
+    - Run: apptainer shell foundry.sif

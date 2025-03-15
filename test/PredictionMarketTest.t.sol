@@ -19,7 +19,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Market, MarketState, CreateMarketParams} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
-import {ERC20Mock} from "./utils/ERC20Mock.sol";
+import {ERC20Mock} from "./utils/ERC20mock.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -346,7 +346,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint160 sqrtPriceLimitX96 = 4295128739 + 1; // Minimum valid sqrtPriceX96 + 1
         
         // Execute the swap using PoolSwapTest which handles the callbacks
-        BalanceDelta delta = poolSwapTest.swap(
+        poolSwapTest.swap(
             market.yesPoolKey,
             IPoolManager.SwapParams({
                 zeroForOne: zeroForOne,

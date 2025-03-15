@@ -12,3 +12,9 @@ docs/
 
 # Dotenv file
 .env
+
+# Library files
+lib/
+
+# Container files
+*.sif
