@@ -4,44 +4,15 @@ pragma solidity ^0.8.24;
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Market} from "../types/MarketTypes.sol";
+import {CreateMarketParams} from "../types/MarketTypes.sol";
 
 interface IPredictionMarketHook {
-    /// @notice Creates a new market with collateral and initial liquidity
-    /// @param oracle Address that will resolve the market
-    /// @param creator Address that created the market
-    /// @param collateralAddress Address of the collateral token
-    /// @param collateralAmount Amount of collateral to deposit
-    /// @param title Title of the market
-    /// @param description Description of the market
-    /// @param duration Duration of the market in seconds
-    /// @return The market ID
-    function createMarketWithCollateralAndLiquidity(
-        address oracle,
-        address creator,
-        address collateralAddress,
-        uint256 collateralAmount,
-        string memory title,
-        string memory description,
-        uint256 duration
-    ) external returns (bytes32);
 
     /// @notice Creates a new market and deposits collateral
-    /// @param oracle Address that will resolve the market
-    /// @param creator Address that created the market
-    /// @param collateralAddress Address of the collateral token
-    /// @param collateralAmount Amount of collateral to deposit
-    /// @param title Title of the market
-    /// @param description Description of the market
-    /// @param duration Duration of the market in seconds
+    /// @param params Struct containing all market creation parameters
     /// @return The market ID
     function createMarketAndDepositCollateral(
-        address oracle,
-        address creator,
-        address collateralAddress,
-        uint256 collateralAmount,
-        string memory title,
-        string memory description,
-        uint256 duration
+        CreateMarketParams calldata params
     ) external returns (bytes32);
 
     /// @notice Resolves the market with the final outcome

@@ -25,3 +25,13 @@ struct Market {
     string description;   // Market description
     uint256 endTimestamp; // Market end time
 }
+
+struct CreateMarketParams {
+    address oracle;
+    address creator;
+    address collateralAddress;
+    uint256 collateralAmount;
+    string title;
+    string description;
+    uint256 duration;
+}

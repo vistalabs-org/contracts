@@ -24,6 +24,7 @@ import {QuoterRevert} from "@uniswap/v4-periphery/src/libraries/QuoterRevert.sol
 import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
 import {Market} from "./types/MarketTypes.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
+import {CreateMarketParams} from "./types/MarketTypes.sol";
 /// @title PredictionMarketHook - Hook for prediction market management
 
 contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
@@ -126,11 +127,20 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Check market exists and is active
         require(market.state == MarketState.Active, "Market not active");
         
-        // Enforce full range positions only
+        // For prediction markets, we want to constrain the price between 0.01 and 0.99 USDC
+        // These ticks correspond to those prices (rounded to valid tick spacing)
+        int24 minValidTick = -9200; // Slightly above 0.01 USDC
+        int24 maxValidTick = -100;  // Slightly below 0.99 USDC
+        
+        // Ensure ticks are valid with the tick spacing
+        minValidTick = (minValidTick / TICK_SPACING) * TICK_SPACING;
+        maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
+        
+        // Enforce position is within the valid price range for prediction markets
         require(
-            params.tickLower == TickMath.minUsableTick(TICK_SPACING) &&
-            params.tickUpper == TickMath.maxUsableTick(TICK_SPACING),
-            "Only full range positions allowed"
+            params.tickLower >= minValidTick && 
+            params.tickUpper <= maxValidTick,
+            "Position must be within 0.01-0.99 price range"
         );
         
         return BaseHook.beforeAddLiquidity.selector;
@@ -158,48 +168,27 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     }
 
     //////////////////////////
-
-    function createMarketWithCollateralAndLiquidity(
-        address oracle,
-        address creator,
-        address collateralAddress,
-        uint256 collateralAmount,
-        string memory title,
-        string memory description,
-        uint256 duration
-    ) public returns (bytes32) {
-        bytes32 marketId = createMarketAndDepositCollateral(
-            oracle,
-            creator,
-            collateralAddress,
-            collateralAmount,
-            title,
-            description,
-            duration
-        );
-        _addInitialOutcomeTokensLiquidity(marketId);
-        return marketId;
-    }
-
     function createMarketAndDepositCollateral(
-        address oracle,
-        address creator,
-        address collateralAddress,
-        uint256 collateralAmount,
-        string memory title,
-        string memory description,
-        uint256 duration
+        CreateMarketParams calldata params
     ) public returns (bytes32) {
         // Create YES and NO tokens
         OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
         OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
 
+        // Each unit of collateral backs 1 yes token and 1 no token
+        uint256 yesTokens = params.collateralAmount;
+        uint256 noTokens = params.collateralAmount;
+
+        // Mint YES and NO tokens to the creator instead of this contract
+        OutcomeToken(address(yesToken)).mint(params.creator, yesTokens);
+        OutcomeToken(address(noToken)).mint(params.creator, noTokens);
+
         // Transfer collateral to this contract
-        IERC20(collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
+        IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
         
         // Create pool keys
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralAddress),
+            currency0: Currency.wrap(params.collateralAddress),
             currency1: Currency.wrap(address(yesToken)),
             fee: 10000,
             tickSpacing: 100,
@@ -207,7 +196,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         });
 
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralAddress),
+            currency0: Currency.wrap(params.collateralAddress),
             currency1: Currency.wrap(address(noToken)),
             fee: 10000,
             tickSpacing: 100,
@@ -225,17 +214,17 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
             noPoolKey: noPoolKey,
-            oracle: oracle,
-            creator: creator,
+            oracle: params.oracle,
+            creator: params.creator,
             yesToken: yesToken,
             noToken: noToken,
             state: MarketState.Active,
             outcome: false,
-            totalCollateral: collateralAmount,
-            collateralAddress: collateralAddress,
-            title: title,
-            description: description,
-            endTimestamp: block.timestamp + duration
+            totalCollateral: params.collateralAmount,
+            collateralAddress: params.collateralAddress,
+            title: params.title,
+            description: params.description,
+            endTimestamp: block.timestamp + params.duration
         });
         
         // Map both pool IDs to this market ID
@@ -245,66 +234,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         return marketId;
     }
 
-    //////////////////////////
-    //// Internal functions //
-    //////////////////////////
-
-    function _addInitialOutcomeTokensLiquidity(bytes32 marketId) internal {
-        // price at tick 0
-        uint160 pricePoolQ = TickMath.getSqrtPriceAtTick(0);
-        console.log("Pool price SQRTX96: %d", pricePoolQ);
-
-        // mint token yes and no to this contract and approve them
-        uint256 initialSupply = 100e18;
-        OutcomeToken(_markets[marketId].yesToken).mint(address(this), initialSupply);
-        OutcomeToken(_markets[marketId].noToken).mint(address(this), initialSupply);
-        console.log("Approving outcome tokens to p");
-        console.log("address(posm):", address(posm));
-        OutcomeToken(_markets[marketId].yesToken).approve(
-            address(posm),
-            type(uint256).max
-        );
-        OutcomeToken(_markets[marketId].noToken).approve(
-            address(posm),
-            type(uint256).max
-        );
-
-        uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmounts(
-            pricePoolQ,
-            TickMath.getSqrtPriceAtTick(TickMath.MIN_TICK),
-            TickMath.getSqrtPriceAtTick(TickMath.MAX_TICK),
-            initialSupply,
-            initialSupply // TO DO: this should be precisely equal to what we have minted
-        );
-
-        (uint256 amount0Check, uint256 amount1Check) = LiquidityAmounts
-            .getAmountsForLiquidity(
-                pricePoolQ,
-                TickMath.getSqrtPriceAtTick(
-                    TickMath.minUsableTick(TICK_SPACING)
-                ),
-                TickMath.getSqrtPriceAtTick(
-                    TickMath.maxUsableTick(TICK_SPACING)
-                ),
-                liquidityDelta
-            );
-
-        console.log("amount0Check: %d", amount0Check);
-        console.log("amount1Check: %d", amount1Check);
-
-        posm.modifyLiquidity(
-            _markets[marketId].yesPoolKey,
-            IPoolManager.ModifyLiquidityParams(
-                TickMath.minUsableTick(TICK_SPACING),
-                TickMath.maxUsableTick(TICK_SPACING),
-                int256(uint256(liquidityDelta)),
-                0
-            ),
-            new bytes(0)
-        );
-    }
-
-   
+        
     //////////////////////////
     //////// Modifiers ////////
     //////////////////////////
