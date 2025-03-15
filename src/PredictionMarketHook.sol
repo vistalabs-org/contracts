@@ -193,6 +193,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Create YES and NO tokens
         OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
         OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
+
+        // Transfer collateral to this contract
+        IERC20(collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
         
         // Create pool keys
         PoolKey memory yesPoolKey = PoolKey({
@@ -387,6 +390,10 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function _getMarketFromPoolId(PoolId poolId) internal view returns (Market storage) {
         bytes32 marketId = _poolToMarketId[poolId];
         require(marketId != bytes32(0), "Market not found");
+        return _markets[marketId];
+    }
+
+    function getMarketById(bytes32 marketId) external view returns (Market memory) {
         return _markets[marketId];
     }
 

@@ -81,4 +81,9 @@ interface IPredictionMarketHook {
     /// @param user The address of the user
     /// @return Whether the user has claimed their winnings
     function hasClaimed(bytes32 marketId, address user) external view returns (bool);
+
+    /// @notice Gets market information by market ID
+    /// @param marketId The ID of the market
+    /// @return Market struct containing market information
+    function getMarketById(bytes32 marketId) external view returns (Market memory);
 } 
