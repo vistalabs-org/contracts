@@ -12,4 +12,4 @@ From: ghcr.io/foundry-rs/foundry:latest
     
     Usage:
     - Build: apptainer build foundry.sif Apptainer.def
-    - Run: apptainer shell foundry.sif
+    - Run: apptainer shell --writable-tmpfs foundry.sif

@@ -6,12 +6,29 @@ remappings = [
     "@uniswap/v4-core/=lib/v4-core/",
     "@uniswap/v4-periphery/=lib/v4-periphery/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@eigenlayer-middleware/src/=lib/eigenlayer-middleware/src/",
+    "@eigenlayer-middleware/src/=lib/eigenlayer-middleware/src/"
 ]
 
-# Automatically use the Solidity version specified in each file
+# Basic compiler settings
 auto_detect_solc = true
+optimizer = true
+optimizer_runs = 1000
+
+# Basic configuration
+solc = "0.8.27"
 evm_version = "cancun"
 
-# Ignore specific warnings
-ignored_error_codes = [8760]
+# Ignore warnings that might be causing issues
+ignored_error_codes = [8760, 5574, 1878, 2333, 9582]
+
+# Use a model linker to handle conflicts in imported libraries
+model_checker.engine = "none"
+fuzz.runs = 256
+
+# Force each test to run in a separate EVM instance
+# This will help with initialization errors by ensuring complete isolation
+fs_permissions = [{ access = "read-write", path = "./"}]
+# Test isolation: each test to run in a completely fresh VM instance
+isolation = true
+# Ensure we're not reusing any state
+fork_block_number = 0

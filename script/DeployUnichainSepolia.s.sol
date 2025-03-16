@@ -12,7 +12,7 @@ import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
-import {ERC20Mock} from "../test/utils/ERC20Mock.sol";
+import {ERC20Mock} from "../test/utils/ERC20mock.sol";
 
 contract DeployPredictionMarket is Script {
     PredictionMarketHook public hook;
