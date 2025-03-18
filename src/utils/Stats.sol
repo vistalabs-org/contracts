@@ -47,50 +47,69 @@ contract NormalDistribution {
 
     // CDF of standard normal
     function normalCDF(int256 x) public view returns (uint256) {
+        // For simplicity, let's use a direct approximation of the normal CDF
+        // Φ(x) ≈ 0.5 * (1 + tanh(√(π/8) * x))
+        
         uint256 xAbs = uint256(x < 0 ? -x : x);
         console.log("xAbs", xAbs);
         
-        // Scale down x before dividing by sqrt(2)
-        uint256 z = (xAbs * SCALE) / SQRT_2; // x / sqrt(2)
-        console.log("z", z);
+        // √(π/8) ≈ 0.626657
+        uint256 factor = 626657000000000000;
         
-        // Scale down z before passing to erf
-        z = z / SCALE;
+        // Calculate √(π/8) * x
+        uint256 t = (factor * xAbs) / SCALE;
+        console.log("t", t);
         
-        uint256 erfValue = erf(z);
-        console.log("erfValue", erfValue);
+        // Better approximation for tanh(t) that saturates for large values
+        uint256 tanhValue;
+        if (t > 3 * SCALE) {
+            // For large t, tanh(t) approaches 1
+            tanhValue = SCALE - SCALE/10000; // 0.9999
+        } else {
+            // For smaller t, use rational approximation
+            // tanh(t) ≈ t / (1 + t²/3)
+            uint256 tSquared = (t * t) / SCALE;
+            uint256 denominator = SCALE + (tSquared / 3);
+            tanhValue = (t * SCALE) / denominator;
+        }
+        console.log("tanhValue", tanhValue);
         
-        uint256 result = (SCALE + erfValue) / 2; // (1 + erf)/2
+        // Calculate 0.5 * (1 + tanh) or 0.5 * (1 - tanh) depending on sign of x
+        uint256 result;
+        if (x < 0) {
+            // For negative x: 0.5 * (1 - tanh)
+            result = (SCALE - tanhValue) / 2;
+        } else {
+            // For positive x: 0.5 * (1 + tanh)
+            result = (SCALE + tanhValue) / 2;
+        }
         console.log("result", result);
         
-        return x < 0 ? SCALE - result : result; // Symmetry for negative x
+        return result;
     }
 
-    // Approximate erf(x) using a polynomial approximation
+    // Approximate erf(x) using a simpler approximation
     function erf(uint256 x) internal pure returns (uint256) {
-        // Use a polynomial approximation for erf
-        // erf(x) ≈ sign(x) * (1 - 1/(1 + p*|x|)^4)
-        // where p = 0.47047
+        // Use Abramowitz and Stegun approximation 7.1.26
+        // erf(x) ≈ 1 - 1/((1 + a₁x + a₂x² + a₃x³ + a₄x⁴)⁴)
+        // where a₁ = 0.254829592, a₂ = -0.284496736, a₃ = 1.421413741, a₄ = -1.453152027, a₅ = 1.061405429
         
-        uint256 p = 470470000000000000; // 0.47047 * 10^18
+        // We'll use a simpler approximation: erf(x) ≈ tanh(1.2 * x)
         
-        // Calculate p*|x|
-        uint256 px = (p * x) / SCALE;
+        // First, scale down x to prevent overflow
+        uint256 scaledX = x / 1e12;
         
-        // Calculate 1 + p*|x|
-        uint256 denominator = SCALE + px;
+        // Calculate 1.2 * x
+        uint256 t = (12 * scaledX) / 10;
         
-        // Calculate (1 + p*|x|)^4
-        uint256 denomPower = denominator;
-        for (uint i = 0; i < 3; i++) {
-            denomPower = (denomPower * denominator) / SCALE;
-        }
+        // Simple approximation for tanh(t) that works for small t
+        // tanh(t) ≈ t / (1 + t²/3)
+        uint256 tSquared = (t * t) / SCALE;
+        uint256 denominator = SCALE + (tSquared / 3);
+        uint256 result = (t * SCALE) / denominator;
         
-        // Calculate 1/(1 + p*|x|)^4
-        uint256 fraction = (SCALE * SCALE) / denomPower;
-        
-        // Calculate 1 - 1/(1 + p*|x|)^4
-        return SCALE - fraction;
+        // Scale result back up
+        return result;
     }
 
     // General normal CDF with mean (mu) and std dev (sigma)

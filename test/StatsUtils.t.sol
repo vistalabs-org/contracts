@@ -99,7 +99,7 @@ contract StatsTest is Test {
             prevCdf = cdf;
         }
     }
-    /*
+    
     function test_NormalCDF_Symmetry() public {
         // CDF should have the property: CDF(-x) = 1 - CDF(x)
         int256 x = 1 * int256(SCALE); // x = 1.0
@@ -123,12 +123,14 @@ contract StatsTest is Test {
         
         uint256 cdfNeg = normalDist.normalCDF(largeNeg);
         uint256 cdfPos = normalDist.normalCDF(largePos);
-        
-        assertTrue(cdfNeg < SCALE / 100);     // Should be close to 0
-        assertTrue(cdfPos > SCALE - SCALE / 100); // Should be close to 1
-        
+
         console.log("CDF at x=-5:", cdfNeg);
+        console.log("SCALE / 100", SCALE / 100);
         console.log("CDF at x=5:", cdfPos);
+        console.log("SCALE - SCALE / 100", SCALE - SCALE / 100);
+
+        assertTrue(cdfPos > SCALE - SCALE / 100); // Should be close to 1
+        assertTrue(cdfNeg < SCALE / 100);     // Should be close to 0
     }
     
     function test_NormalCDFGeneral() public {
@@ -186,5 +188,6 @@ contract StatsTest is Test {
         
         console.log("CDF at x=2, mean=1, stddev=2:", cdf1);
         console.log("CDF at x=6, mean=3, stddev=6:", cdf2);
-    }*/
+    }
+
 }
