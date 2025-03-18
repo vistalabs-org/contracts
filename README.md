@@ -82,3 +82,46 @@ Make sure to set the following environment variables:
 - `UNISWAP_SEPOLIA_RPC_URL`: Your Uniswap Sepolia RPC endpoint
 - `UNISWAP_SEPOLIA_PK`: Your private key for the Uniswap Sepolia testnet
 - `ETHERSCAN_API_KEY`: For contract verification
+
+### Frontend Integration
+
+The contract provides several functions to retrieve market data:
+
+- `getAllMarketIds()`: Returns an array of all market IDs
+- `getAllMarkets()`: Returns an array of all markets with their full details
+- `getMarkets(offset, limit)`: Returns a paginated subset of markets
+- `getMarketCount()`: Returns the total number of markets
+
+Example frontend code to fetch all markets:
+
+```javascript
+// Using ethers.js
+const predictionMarketContract = new ethers.Contract(
+  PREDICTION_MARKET_ADDRESS,
+  PREDICTION_MARKET_ABI,
+  provider
+);
+
+// Get all markets
+const markets = await predictionMarketContract.getAllMarkets();
+
+// Display markets
+markets.forEach(market => {
+  console.log(`Market ID: ${market.id}`);
+  console.log(`Title: ${market.title}`);
+  console.log(`Description: ${market.description}`);
+  console.log(`State: ${['Active', 'Resolved', 'Cancelled'][market.state]}`);
+  console.log(`Outcome: ${market.outcome ? 'YES' : 'NO'}`);
+  console.log(`Total Collateral: ${ethers.utils.formatUnits(market.totalCollateral, 6)}`);
+  console.log('---');
+});
+```
+
+For applications with many markets, use pagination:
+
+```javascript
+// Get markets with pagination
+const offset = 0;
+const limit = 10;
+const marketBatch = await predictionMarketContract.getMarkets(offset, limit);
+```

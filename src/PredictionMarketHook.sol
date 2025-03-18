@@ -48,6 +48,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Map pool IDs to market IDs
     mapping(PoolId => bytes32) private _poolToMarketId;
 
+    // Array to store all market IDs
+    bytes32[] private _allMarketIds;
+
     error DirectSwapsNotAllowed();
     error DirectLiquidityNotAllowed();
     error NotOracle();
@@ -228,6 +231,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             endTimestamp: block.timestamp + params.duration
         });
         
+        // Add market ID to the array of all markets
+        _allMarketIds.push(marketId);
+        
         // Map both pool IDs to this market ID
         _poolToMarketId[yesPoolKey.toId()] = marketId;
         _poolToMarketId[noPoolKey.toId()] = marketId;
@@ -235,7 +241,49 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         return marketId;
     }
 
+    // Function to get all market IDs
+    function getAllMarketIds() external view returns (bytes32[] memory) {
+        return _allMarketIds;
+    }
+
+    // Function to get all markets with details
+    function getAllMarkets() external view returns (Market[] memory) {
+        uint256 count = _allMarketIds.length;
+        Market[] memory markets = new Market[](count);
         
+        for (uint256 i = 0; i < count; i++) {
+            markets[i] = _markets[_allMarketIds[i]];
+        }
+        
+        return markets;
+    }
+
+    // Function to get markets with pagination
+    function getMarkets(uint256 offset, uint256 limit) external view returns (Market[] memory) {
+        uint256 count = _allMarketIds.length;
+        
+        // Ensure offset is valid
+        if (offset >= count) {
+            return new Market[](0);
+        }
+        
+        // Calculate actual limit
+        uint256 actualLimit = (offset + limit > count) ? count - offset : limit;
+        
+        Market[] memory markets = new Market[](actualLimit);
+        
+        for (uint256 i = 0; i < actualLimit; i++) {
+            markets[i] = _markets[_allMarketIds[offset + i]];
+        }
+        
+        return markets;
+    }
+
+    // Function to get market count
+    function getMarketCount() external view returns (uint256) {
+        return _allMarketIds.length;
+    }
+
     //////////////////////////
     //////// Modifiers ////////
     //////////////////////////
