@@ -31,7 +31,6 @@ contract NormalDistribution {
         uint256 xAbs = uint256(x < 0 ? -x : x); // Handle negative x (symmetric)
         
         // Scale down x first to prevent overflow
-
         uint256 xScaled = xAbs / SCALE;
         uint256 xSquared = (xScaled * xScaled); // x^2 (already scaled)
         console.log("xSquared", xSquared);
