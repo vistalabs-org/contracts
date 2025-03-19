@@ -7,7 +7,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Currency,CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {FixedPointMathLib} from "@uniswap/v4-core/lib/solmate/src/utils/FixedPointMathLib.sol";
@@ -30,6 +31,8 @@ import {CreateMarketParams} from "./types/MarketTypes.sol";
 contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
+    using CurrencyLibrary for Currency;
+    using CurrencySettler for Currency;
     IPoolManager public poolm;
     PoolModifyLiquidityTest public posm;
     PoolCreationHelper public poolCreationHelper;
@@ -51,6 +54,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Array to store all market IDs
     bytes32[] private _allMarketIds;
 
+    struct CallbackData {
+        uint256 amountEach; // Amount of each token to add as liquidity
+        Currency currency0;
+        Currency currency1;
+        address sender;
+        PoolKey key;
+    }
+
     error DirectSwapsNotAllowed();
     error DirectLiquidityNotAllowed();
     error NotOracle();
@@ -59,7 +70,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     error MarketNotResolved();
     error NoTokensToClaim();
     error AlreadyClaimed();
-
+    error AddLiquidityThroughHook();
     event PoolCreated(PoolId poolId);
     event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
 
@@ -91,7 +102,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
                 afterSwap: false,
                 beforeDonate: false,
                 afterDonate: false,
-                beforeSwapReturnDelta: false,
+                beforeSwapReturnDelta: true,
                 afterSwapReturnDelta: false,
                 afterAddLiquidityReturnDelta: false,
                 afterRemoveLiquidityReturnDelta: false
@@ -124,30 +135,53 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         IPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata
     ) internal view override returns (bytes4) {
-        // Get market from pool key
-        PoolId poolId = key.toId();
-        Market memory market = _getMarketFromPoolId(poolId);
+        revert AddLiquidityThroughHook();
+    }
+
+    function addLiquidity(PoolKey calldata key, uint256 amountEach) external {
+        poolManager.unlock(
+        abi.encode(
+            CallbackData(
+                amountEach, 
+                key.currency0,
+                key.currency1,
+                msg.sender,
+                key
+            )
+        )
+       );
+    }
+
+    function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
+        CallbackData memory callbackData = abi.decode(data, (CallbackData));
+	    console.log("callbackData: ",callbackData.amountEach);
         
-        // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
-        
-        // For prediction markets, we want to constrain the price between 0.01 and 0.99 USDC
-        // These ticks correspond to those prices (rounded to valid tick spacing)
-        int24 minValidTick = -9200; // Slightly above 0.01 USDC
-        int24 maxValidTick = -100;  // Slightly below 0.99 USDC
-        
-        // Ensure ticks are valid with the tick spacing
-        minValidTick = (minValidTick / TICK_SPACING) * TICK_SPACING;
-        maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
-        
-        // Enforce position is within the valid price range for prediction markets
-        require(
-            params.tickLower >= minValidTick && 
-            params.tickUpper <= maxValidTick,
-            "Position must be within 0.01-0.99 price range"
+	    callbackData.currency0.settle(
+            poolManager,
+            callbackData.sender,
+            callbackData.amountEach,
+            false 
         );
-        
-        return BaseHook.beforeAddLiquidity.selector;
+        callbackData.currency1.settle(
+            poolManager,
+            callbackData.sender,
+            callbackData.amountEach,
+            false
+        );
+
+        callbackData.currency0.take(
+            poolManager,
+            address(this),
+            callbackData.amountEach,
+            true 
+        );
+        callbackData.currency1.take(
+            poolManager,
+            address(this),
+            callbackData.amountEach,
+            true
+        );
+	    return "";
     }
 
     function _beforeRemoveLiquidity(
@@ -413,6 +447,24 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
     function getMarketById(bytes32 marketId) external view returns (Market memory) {
         return _markets[marketId];
+    }
+
+    // mint YES / NO tokens based on collateral amount
+    // Users can mint based on current price to provide liquidity to the market
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) external {
+        Market memory market = _markets[marketId];
+        // Calculate collateral to return (accounting for decimal differences)
+        // YES/NO tokens have 18 decimals, collateral might have different decimals
+        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        uint256 decimalAdjustment = 10**(18 - collateralDecimals);
+
+        // 1 unit of collateral = 1 unit of YES and one of NO token (100 USDC mints 100 YES and 100 NO)
+        // take collateral from the user
+        IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
+
+        // mint YES and NO tokens to the user
+        market.yesToken.mint(msg.sender, collateralAmount / decimalAdjustment);
+        market.noToken.mint(msg.sender, collateralAmount / decimalAdjustment);
     }
 
 }
