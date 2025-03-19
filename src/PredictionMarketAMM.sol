@@ -31,7 +31,7 @@ import {toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol"
 
 /// @title PredictionMarketHook - Hook for prediction market management
 
-contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
+contract PredictionMarketHookAMM is BaseHook, IPredictionMarketHook {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
     using CurrencyLibrary for Currency;
@@ -133,7 +133,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         require(market.state == MarketState.Active, "Market not active");
         
         // Get current reserves
-        (uint256 reserve0, uint256 reserve1) = _getReserves(key);
+        (uint256 reserve0, uint256 reserve1) = getReserves(key);
         
         // Determine if we're swapping in token0 or token1
         bool zeroForOne = params.zeroForOne;
@@ -143,12 +143,20 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         uint256 amountOut;
         if (zeroForOne) {
             // Swapping token0 for token1
-            // We need to calculate how much token1 to give out
-            amountOut = quoter.computeOutputAmount(amountIn, reserve1);
+            // Add amountIn to reserve0 to get post-swap state
+            uint256 newReserve0 = reserve0 + amountIn;
+            amountOut = quoter.computeOutputAmount(newReserve0, reserve1);
+            
+            // The actual output is the change in reserve1
+            amountOut = reserve1 - amountOut;
         } else {
             // Swapping token1 for token0
-            // We need to calculate how much token0 to give out
-            amountOut = quoter.computeOutputAmount(amountIn, reserve0);
+            // Add amountIn to reserve1 to get post-swap state
+            uint256 newReserve1 = reserve1 + amountIn;
+            amountOut = quoter.computeOutputAmount(newReserve1, reserve0);
+            
+            // The actual output is the change in reserve0
+            amountOut = reserve0 - amountOut;
         }
         
         // Create the BeforeSwapDelta
@@ -513,6 +521,11 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Get balances using CurrencyLibrary's balanceOf function
         reserve0 = CurrencyLibrary.balanceOf(key.currency0, address(poolManager));
         reserve1 = CurrencyLibrary.balanceOf(key.currency1, address(poolManager));
+    }
+
+    // Public wrapper for testing
+    function getReserves(PoolKey calldata key) public view returns (uint256 reserve0, uint256 reserve1) {
+        return _getReserves(key);
     }
 
 }
