@@ -192,16 +192,16 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         
         // Create pool keys
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
-            currency1: Currency.wrap(address(yesToken)),
+            currency0: Currency.wrap(address(yesToken)),
+            currency1: Currency.wrap(params.collateralAddress),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
 
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
-            currency1: Currency.wrap(address(noToken)),
+            currency0: Currency.wrap(address(noToken)),
+            currency1: Currency.wrap(params.collateralAddress),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
