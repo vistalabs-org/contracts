@@ -7,7 +7,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {Currency,CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -26,6 +26,9 @@ import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
 import {Market} from "./types/MarketTypes.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
 import {CreateMarketParams} from "./types/MarketTypes.sol";
+import "./utils/Quoter.sol";
+import {toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+
 /// @title PredictionMarketHook - Hook for prediction market management
 
 contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
@@ -36,6 +39,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     IPoolManager public poolm;
     PoolModifyLiquidityTest public posm;
     PoolCreationHelper public poolCreationHelper;
+    NormalQuoter public quoter;
     int24 public TICK_SPACING = 100;
     // Market ID counter
     uint256 private _marketCount;
@@ -77,11 +81,13 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     constructor(
         IPoolManager _poolManager,
         PoolModifyLiquidityTest _posm,
-        PoolCreationHelper _poolCreationHelper
+        PoolCreationHelper _poolCreationHelper,
+        NormalQuoter _quoter
     ) BaseHook(_poolManager) {
         poolm = IPoolManager(_poolManager);
         posm = PoolModifyLiquidityTest(_posm);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
+        quoter = _quoter;
     }
 
     function getHookPermissions()
@@ -114,10 +120,10 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // -----------------------------------------------
 
     function _beforeSwap(
-        address,
+        address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata,
-        bytes calldata
+        IPoolManager.SwapParams calldata params,
+        bytes calldata data
     ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
         // Get market from pool key
         PoolId poolId = key.toId();
@@ -126,7 +132,42 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Check market exists and is active
         require(market.state == MarketState.Active, "Market not active");
         
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        // Get current reserves
+        (uint256 reserve0, uint256 reserve1) = _getReserves(key);
+        
+        // Determine if we're swapping in token0 or token1
+        bool zeroForOne = params.zeroForOne;
+        uint256 amountIn = params.amountSpecified > 0 ? uint256(params.amountSpecified) : 0;
+        
+        // Calculate output amount using our custom invariant
+        uint256 amountOut;
+        if (zeroForOne) {
+            // Swapping token0 for token1
+            // We need to calculate how much token1 to give out
+            amountOut = quoter.computeOutputAmount(amountIn, reserve1);
+        } else {
+            // Swapping token1 for token0
+            // We need to calculate how much token0 to give out
+            amountOut = quoter.computeOutputAmount(amountIn, reserve0);
+        }
+        
+        // Create the BeforeSwapDelta
+        BeforeSwapDelta delta;
+        if (zeroForOne) {
+            // User gives token0, gets token1
+            delta = toBeforeSwapDelta(
+                int128(int256(amountIn)),
+                -int128(int256(amountOut))
+            );
+        } else {
+            // User gives token1, gets token0
+            delta = toBeforeSwapDelta(
+                -int128(int256(amountOut)),
+                int128(int256(amountIn))
+            );
+        }
+        
+        return (BaseHook.beforeSwap.selector, delta, 0);
     }
 
     function _beforeAddLiquidity(
@@ -465,6 +506,13 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // mint YES and NO tokens to the user
         market.yesToken.mint(msg.sender, collateralAmount / decimalAdjustment);
         market.noToken.mint(msg.sender, collateralAmount / decimalAdjustment);
+    }
+
+    // Helper function to get current reserves
+    function _getReserves(PoolKey calldata key) internal view returns (uint256 reserve0, uint256 reserve1) {
+        // Get balances using CurrencyLibrary's balanceOf function
+        reserve0 = CurrencyLibrary.balanceOf(key.currency0, address(poolManager));
+        reserve1 = CurrencyLibrary.balanceOf(key.currency1, address(poolManager));
     }
 
 }
