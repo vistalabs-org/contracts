@@ -31,7 +31,7 @@ import {toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol"
 
 /// @title PredictionMarketHook - Hook for prediction market management
 
-contract PredictionMarketHookAMM is BaseHook, IPredictionMarketHook {
+contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
     using CurrencyLibrary for Currency;
@@ -275,32 +275,22 @@ contract PredictionMarketHookAMM is BaseHook, IPredictionMarketHook {
         
         // Create pool keys
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
-            currency1: Currency.wrap(address(yesToken)),
-            fee: 10000,
-            tickSpacing: 100,
-            hooks: IHooks(address(this))
-        });
-
-        PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
+            currency0: Currency.wrap(address(yesToken)),
             currency1: Currency.wrap(address(noToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-
         // Create both pools
         poolCreationHelper.createUniswapPool(yesPoolKey);
-        poolCreationHelper.createUniswapPool(noPoolKey);
 
         // Create market ID from both pool keys
-        bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), noPoolKey.toId()));
+        bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), yesPoolKey.toId()));
 
         // Store market info
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
-            noPoolKey: noPoolKey,
+            noPoolKey: yesPoolKey,
             oracle: params.oracle,
             creator: params.creator,
             yesToken: yesToken,
@@ -319,7 +309,6 @@ contract PredictionMarketHookAMM is BaseHook, IPredictionMarketHook {
         
         // Map both pool IDs to this market ID
         _poolToMarketId[yesPoolKey.toId()] = marketId;
-        _poolToMarketId[noPoolKey.toId()] = marketId;
         
         return marketId;
     }

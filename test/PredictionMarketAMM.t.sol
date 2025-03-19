@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {PredictionMarketHookAMM} from "../src/PredictionMarketAMM.sol";
+import {PredictionMarketAMM} from "../src/PredictionMarketAMM.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 import "forge-std/console.sol";
 // Uniswap libraries
@@ -30,7 +30,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     
-    PredictionMarketHookAMM public hook;
+    PredictionMarketAMM public hook;
     PoolCreationHelper public poolCreationHelper;
     ERC20Mock public collateralToken;
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
@@ -68,20 +68,26 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Deploy the hook using foundry cheatcode with specific flags
         deployCodeTo(
-            "PredictionMarketHook.sol:PredictionMarketHook", 
+            "PredictionMarketAMM.sol:PredictionMarketAMM", 
             abi.encode(manager, poolModifyLiquidityTest, poolCreationHelper, quoter), 
             flags
         );
         
         // Initialize hook instance at the deployed address
-        hook = PredictionMarketHookAMM(flags);
+        hook = PredictionMarketAMM(flags);
         console.log("Hook address:", address(hook));
 
-        // create and mint a collateral token
-        // Deploy mock token
-        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
+        // Create and mint a collateral token with a very low address
+        address lowAddress = address(0x1); // Very low address
+        vm.startPrank(lowAddress);
         
-        // Mint some tokens for testing
+        // Deploy mock token from the low address
+        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
+        vm.stopPrank();
+        
+        console.log("Collateral token address:", address(collateralToken));
+        
+        // Now mint tokens
         collateralToken.mint(address(this), 1000000 * 10**6);
 
         // approve the hook to transfer the tokens
@@ -102,6 +108,57 @@ contract PredictionMarketHookTest is Test, Deployers {
         
         return hook.createMarketAndDepositCollateral(params);
     }
+
+    // test market creation
+    function test_createMarket() public {
+        // Create market
+        bytes32 marketId = createTestMarket();
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Verify market details
+        assertEq(market.oracle, address(this), "Incorrect oracle");
+        assertEq(market.creator, address(this), "Incorrect creator");
+        assertEq(market.collateralAddress, address(collateralToken), "Incorrect collateral token");
+        assertEq(market.totalCollateral, COLLATERAL_AMOUNT, "Incorrect collateral amount");
+        
+        // Convert enum to uint8 for comparison
+        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be active");
+        
+        assertEq(market.title, "Will ETH reach $10k in 2024?", "Incorrect title");
+        assertEq(
+            market.description, 
+            "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
+            "Incorrect description"
+        );
+        assertEq(market.endTimestamp, block.timestamp + 30 days, "Incorrect end timestamp");
+        
+        // Verify tokens were created
+        assertTrue(address(market.yesToken) != address(0), "YES token not created");
+        assertTrue(address(market.noToken) != address(0), "NO token not created");
+        
+        // Verify token metadata
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+        OutcomeToken noToken = OutcomeToken(address(market.noToken));
+                
+        // Verify pools were created
+        (uint256 yesReserve0, uint256 yesReserve1) = hook.getReserves(market.yesPoolKey);
+        assertEq(yesReserve0, 0, "Initial YES pool reserve0 should be 0");
+        assertEq(yesReserve1, 0, "Initial YES pool reserve1 should be 0");
+        
+        (uint256 noReserve0, uint256 noReserve1) = hook.getReserves(market.noPoolKey);
+        assertEq(noReserve0, 0, "Initial NO pool reserve0 should be 0");
+        assertEq(noReserve1, 0, "Initial NO pool reserve1 should be 0");
+        
+        // Verify collateral was transferred
+        assertEq(
+            collateralToken.balanceOf(address(hook)), 
+            COLLATERAL_AMOUNT, 
+            "Collateral not transferred to contract"
+        );
+    }
+
 
     function test_swapWithNormalDistribution() public {
         // Use the helper function instead of modifier
