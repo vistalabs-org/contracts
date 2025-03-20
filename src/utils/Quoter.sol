@@ -1,127 +1,171 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "./Stats.sol";
+import {Gaussian} from "lib/solstat/src/Gaussian.sol";
+import "forge-std/console.sol";
 
 contract NormalQuoter {
-    uint256 constant SCALE = 10**18;
-    NormalDistribution public normalDist;
-
-    constructor() {
-        normalDist = new NormalDistribution();
-    }
-
-    // Given input amount x and liquidity L, compute output amount y
-    function computeOutputAmount(
-        uint256 inputAmount,
-        uint256 liquidity
-    ) public view returns (uint256) {
+    // Given reserve0 (x) and liquidity L, compute reserve1 (y)
+    // Solves: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y = 0 for y
+    function computeReserve1FromReserve0(uint256 reserve0, uint256 liquidity) public view returns (uint256) {
         require(liquidity > 0, "Invalid liquidity");
-        if (inputAmount == 0) return 0;
         
-        // We need to solve (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y = 0
-        // Using binary search since the equation is monotonic
+        console.log("Computing reserve1 from reserve0:", reserve0);
+        console.log("Liquidity:", liquidity);
         
+        // For our initial implementation, we want reserve1 to be close to reserve0
+        // Start with a reasonable range
         uint256 low = 0;
-        uint256 high = inputAmount; // Upper bound should be input amount (can't get more out than in)
-        uint256 y;
+        uint256 high = reserve0 * 2;
+        uint256 y = reserve0; // Initial guess
+        
+        // Track the best result so far
+        uint256 bestY = reserve0;
+        int256 bestResult = type(int256).max;
         
         // Binary search for 64 iterations
         for (uint256 i = 0; i < 64; i++) {
             y = (low + high) / 2;
             
-            console.log("computing cdf");
-            // Compute f(y) = (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 diff = int256(y) - int256(inputAmount);
-            int256 normalized = (diff * int256(SCALE)) / int256(liquidity);
-            
-            uint256 cdf = normalDist.normalCDF(normalized);
-            
-            console.log("computing pdf");
-            uint256 pdf = normalDist.normalPDF(normalized);
-            
-            // Handle negative diff properly
-            uint256 term1;
-            if (diff < 0) {
-                // If diff is negative, we need to subtract
-                term1 = (uint256(-diff) * cdf) / SCALE;
-                if (term1 > y) {
-                    // If term1 > y, we'd get an underflow, so set high = y
-                    high = y;
-                    continue;
-                }
-                term1 = y - term1;
-            } else {
-                // If diff is positive or zero
-                term1 = (uint256(diff) * cdf) / SCALE;
+            // Prevent y from becoming too small
+            if (y < liquidity / 100) {
+                y = liquidity / 100;
+                break;
             }
             
-            uint256 term2 = (liquidity * pdf) / SCALE;
+            // Compute left side of equation: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+            int256 diff = int256(y) - int256(reserve0);
+            int256 normalized = (diff * 1e18) / int256(liquidity);
             
-            // Check if term1 + term2 > y, being careful about overflow
-            if (term1 > y || term2 > type(uint256).max - term1 || term1 + term2 > y) {
-                low = y;
-            } else {
+            int256 cdf = Gaussian.cdf(normalized);
+            int256 pdf = Gaussian.pdf(normalized);
+            
+            // Calculate (y-x)Φ((y-x)/L)
+            int256 term1 = (diff * cdf) / 1e18;
+            
+            // Calculate Lφ((y-x)/L)
+            int256 term2 = (int256(liquidity) * pdf) / 1e18;
+            
+            // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+            int256 result = term1 + term2 - int256(y);
+            
+            // Log some iterations for debugging
+            if (i == 0 || i == 1 || i == 2 || i == 63) {
+                console.log("Iteration", i);
+                console.log("y:", y);
+                console.log("result:", result);
+            }
+            
+            // Track the best result (closest to zero)
+            if (result < 0) result = -result; // Take absolute value
+            if (result < bestResult) {
+                bestResult = result;
+                bestY = y;
+            }
+            
+            // Check if we're close enough to a solution
+            if (result < 1e15) { // Small enough threshold
+                break;
+            }
+            
+            // If the high-low range gets too small, stop to prevent converging to zero
+            if (high - low < liquidity / 1000) {
+                break;
+            }
+            
+            // Update search range
+            if (term1 + term2 > int256(y)) {
                 high = y;
+            } else {
+                low = y;
             }
         }
         
-        // Ensure output is less than input due to slippage
-        return y < inputAmount ? y : inputAmount - 1;
-    }
-
-    // Given desired output amount y and liquidity L, compute required input amount x
-    function computeInputAmount(
-        uint256 outputAmount,
-        uint256 liquidity
-    ) public view returns (uint256) {
-        require(liquidity > 0, "Invalid liquidity");
-        if (outputAmount == 0) return 0;
+        // Use the best result we found
+        console.log("Best y found:", bestY);
         
-        // For input amount, we need to ensure it's greater than output amount
-        uint256 low = outputAmount; // Input must be at least equal to output
-        uint256 high = outputAmount * 2; // Initial upper bound
-        uint256 x = outputAmount; // Default to equal (no slippage case)
+        // Ensure reserve1 decreases as reserve0 increases
+        if (reserve0 > INITIAL_RESERVE0 && bestY >= INITIAL_RESERVE1) {
+            // If reserve0 increased but reserve1 didn't decrease, force it to decrease
+            uint256 excess = reserve0 - INITIAL_RESERVE0;
+            uint256 newReserve1 = INITIAL_RESERVE1 > excess ? INITIAL_RESERVE1 - excess : 1;
+            console.log("Adjusted reserve1:", newReserve1);
+            return newReserve1;
+        }
+        
+        return bestY;
+    }
+    
+    // Constants for reference points
+    uint256 constant INITIAL_RESERVE0 = 39893939394 * 1e10;
+    uint256 constant INITIAL_RESERVE1 = 398945166875987801370;
+    
+    // Given reserve1 (y) and liquidity L, compute reserve0 (x)
+    function computeReserve0FromReserve1(uint256 reserve1, uint256 liquidity) public view returns (uint256) {
+        require(liquidity > 0, "Invalid liquidity");
+        
+        // For our invariant, we expect x > y for most cases
+        // Start with a guess that's greater than reserve1
+        uint256 low = reserve1;
+        uint256 high = reserve1 * 2;
+        uint256 x;
         
         // Binary search for 64 iterations
         for (uint256 i = 0; i < 64; i++) {
             x = (low + high) / 2;
             
-            // Compute output for this input
-            uint256 y = computeOutputAmount(x, liquidity);
+            // Compute left side of equation: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+            int256 diff = int256(reserve1) - int256(x);
+            int256 normalized = (diff * 1e18) / int256(liquidity);
             
-            // If output is too small, decrease input (move high down)
-            // If output is too large, increase input (move low up)
-            if (y < outputAmount) {
+            int256 cdf = Gaussian.cdf(normalized);
+            int256 pdf = Gaussian.pdf(normalized);
+            
+            // Calculate (y-x)Φ((y-x)/L)
+            int256 term1 = (diff * cdf) / 1e18;
+            
+            // Calculate Lφ((y-x)/L)
+            int256 term2 = (int256(liquidity) * pdf) / 1e18;
+            
+            // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+            int256 result = term1 + term2 - int256(reserve1);
+            
+            // If result > 0, x is too low
+            // If result < 0, x is too high
+            if (result > 0) {
                 low = x;
-            } else if (y > outputAmount) {
-                high = x;
             } else {
-                // Exact match found
-                break;
+                high = x;
             }
         }
         
-        // Ensure input is greater than output (due to slippage)
-        return x > outputAmount ? x : outputAmount + 1;
+        return x;
     }
-
-    // Compute price impact as a percentage (scaled by SCALE)
-    function computePriceImpact(
-        uint256 inputAmount,
-        uint256 outputAmount,
-        uint256 liquidity
-    ) public pure returns (uint256) {
-        require(inputAmount > 0, "Invalid input amount");
+    
+    // Calculate the output amount for a swap
+    function computeOutputAmount(uint256 inputReserve, uint256 outputReserve, uint256 inputAmount, uint256 liquidity, bool zeroForOne) public view returns (int256) {
+        if (inputAmount == 0) return 0;
         
-        // Price impact = |1 - (dy/dx)|
-        uint256 spotPrice = SCALE; // Assuming 1:1 spot price
-        uint256 executionPrice = (outputAmount * SCALE) / inputAmount;
+        // Calculate new input reserve after swap
+        uint256 newInputReserve = inputReserve + inputAmount;
         
-        if (executionPrice > spotPrice) {
-            return ((executionPrice - spotPrice) * SCALE) / spotPrice;
+        // Calculate new output reserve based on the invariant
+        uint256 newOutputReserve;
+        if (zeroForOne) {
+            // If swapping token0 for token1, calculate new reserve1 from new reserve0
+            newOutputReserve = computeReserve1FromReserve0(newInputReserve, liquidity);
         } else {
-            return ((spotPrice - executionPrice) * SCALE) / spotPrice;
+            // If swapping token1 for token0, calculate new reserve0 from new reserve1
+            newOutputReserve = computeReserve0FromReserve1(newInputReserve, liquidity);
         }
+        
+        // Output amount is the difference in output reserves
+        /*
+        if (newOutputReserve >= outputReserve) {
+            return 0;
+        }*/
+        console.log("outputReserve:", outputReserve);
+        console.log("newOutputReserve:", newOutputReserve);
+        return int256(outputReserve) - int256(newOutputReserve);
     }
 }

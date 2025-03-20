@@ -11,16 +11,14 @@ import {console} from "forge-std/console.sol";
 
 contract PoolCreationHelper {
     using PoolIdLibrary for PoolKey;
-    
+
     IPoolManager public immutable poolManager;
 
     constructor(address _poolManager) {
         poolManager = IPoolManager(_poolManager);
     }
 
-    function createUniswapPool(
-        PoolKey memory pool
-    ) external returns (PoolKey memory) {
+    function createUniswapPool(PoolKey memory pool) external returns (PoolKey memory) {
         uint160 pricePoolQ = TickMath.getSqrtPriceAtTick(0);
 
         console.log("Pool price SQRTX96: %d", pricePoolQ);
@@ -31,5 +29,4 @@ contract PoolCreationHelper {
 
         return pool;
     }
-
 }

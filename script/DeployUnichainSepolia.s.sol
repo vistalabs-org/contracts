@@ -30,11 +30,11 @@ contract DeployPredictionMarket is Script {
         // Deploy Uniswap infrastructure
         manager = new PoolManager(address(this));
         console.log("Deployed PoolManager at", address(manager));
-        
+
         // Deploy test routers
         modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
         poolSwapTest = new PoolSwapTest(manager);
-        
+
         // Deploy PoolCreationHelper
         poolCreationHelper = new PoolCreationHelper(address(manager));
         console.log("Deployed PoolCreationHelper at", address(poolCreationHelper));
@@ -42,9 +42,7 @@ contract DeployPredictionMarket is Script {
         // Deploy hook with proper flags
         vm.stopBroadcast();
         uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | 
-            Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | 
-            Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
 
         address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
@@ -58,26 +56,22 @@ contract DeployPredictionMarket is Script {
         console.log("Deploying PredictionMarketHook at", hookAddress);
 
         vm.startBroadcast(deployerPrivateKey);
-        hook = new PredictionMarketHook{salt: salt}(
-            manager, 
-            modifyLiquidityRouter,
-            poolCreationHelper
-        );
+        hook = new PredictionMarketHook{salt: salt}(manager, modifyLiquidityRouter, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
-        
+
         // Deploy mock collateral token
         collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
         console.log("Collateral token deployed at", address(collateralToken));
-        
+
         // Mint tokens to deployer
         address deployer = vm.addr(deployerPrivateKey);
-        collateralToken.mint(deployer, 1000000 * 10**6);
+        collateralToken.mint(deployer, 1000000 * 10 ** 6);
         console.log("Minted 1,000,000 USDC to deployer");
-        
+
         // Approve hook to spend tokens
         collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
-        
+
         // Create a market
         CreateMarketParams memory params = CreateMarketParams({
             oracle: deployer,
@@ -88,10 +82,10 @@ contract DeployPredictionMarket is Script {
             description: "Market resolves to YES if ETH is above 1000",
             duration: 30 days
         });
-        
+
         bytes32 marketId = hook.createMarketAndDepositCollateral(params);
         console.log("Market created with ID:", vm.toString(marketId));
-        
+
         vm.stopBroadcast();
         console.log("Deployment complete!");
     }

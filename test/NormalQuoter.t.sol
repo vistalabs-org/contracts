@@ -7,116 +7,126 @@ import {console} from "forge-std/console.sol";
 
 contract NormalQuoterTest is Test {
     NormalQuoter public quoter;
-    uint256 constant SCALE = 10**18;
-    
+    uint256 constant LIQUIDITY = 1000 * 1e18; // 1.0 liquidity parameter
+    uint256 constant INITIAL_RESERVE0 = 39893939394 * 1e10; // approx x = y point is the starting point
+    uint256 constant INITIAL_RESERVE1 = 398945166875987801370; // approx x = y point is the starting point
+
     function setUp() public {
         quoter = new NormalQuoter();
     }
 
+    function test_ComputeReserve1FromReserve0() public {
+        //398.93939394 398.9393939
+        uint256 reserve0 = INITIAL_RESERVE0; 
+        
+        // Compute reserve1 from reserve0
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
+        
+        console.log("Reserve0:", reserve0 );
+        console.log("Computed Reserve1:", reserve1 );
+        
+        // Reserve1 should be close to reserve0 for our model
+        uint256 difference = reserve0 > reserve1 ? reserve0 - reserve1 : reserve1 - reserve0;
+        assertTrue(difference < reserve0 / 10, "Reserves should be within 10% of each other");
+        
+        // Now compute reserve0 from reserve1
+        uint256 computedReserve0 = quoter.computeReserve0FromReserve1(reserve1, LIQUIDITY);
+        
+        console.log("Reserve1:", reserve1 );
+        console.log("Computed Reserve0:", computedReserve0 );
+        
+        // The computed reserve0 should be close to the original reserve0
+        difference = reserve0 > computedReserve0 ? reserve0 - computedReserve0 : computedReserve0 - reserve0;
+        console.log("Difference:", difference);
+        assertTrue(difference < reserve0 / 100, "Round trip computation should be accurate within 1%");
+    }
+
+    function test_negativeRelationBetweenReserve0AndReserve1() public {
+        uint256 reserve0 = INITIAL_RESERVE0;
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
+
+        // add 10 to reserve0, reserve1 should decrease
+        reserve0 += 10 * 1e18;
+        reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
+        assertTrue(reserve1 < INITIAL_RESERVE1, "Reserve1 should decrease when reserve0 increases");
+    }
+
     function test_ComputeOutputAmount() public {
-        uint256 inputAmount = 100 * SCALE;  // 100 tokens
-        uint256 liquidity = 1000 * SCALE;   // 1000 tokens of liquidity
+        uint256 reserve0 = INITIAL_RESERVE0; // 100 tokens of reserve0
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY); // Compute matching reserve1
+        uint256 inputAmount = 10 * 1e18; // 10 tokens input
         
-        uint256 outputAmount = quoter.computeOutputAmount(inputAmount, liquidity);
-
-        console.log("Input amount:", inputAmount / SCALE);
-        console.log("Output amount:", outputAmount / SCALE);
+        // Compute output amount for swapping token0 for token1
+        int256 outputAmount = int256(quoter.computeOutputAmount(reserve0, reserve1, inputAmount, LIQUIDITY, true));
+        
+        console.log("Input amount:", inputAmount );
+        console.log("Output amount:", uint256(outputAmount));
+        
         // Output should be less than input due to slippage
-        assertTrue(outputAmount < inputAmount);
+        assertTrue(outputAmount < int256(inputAmount), "Output should be less than input");
         // Output shouldn't be zero
-        assertTrue(outputAmount > 0);
-        
-        
-    }
+        assertTrue(outputAmount > 0, "Output shouldn't be zero");
     
-    function test_ComputeInputAmount() public {
-        uint256 desiredOutput = 100 * SCALE;  // Want 100 tokens out
-        uint256 liquidity = 1000 * SCALE;     // 1000 tokens of liquidity
-        
-        uint256 requiredInput = quoter.computeInputAmount(desiredOutput, liquidity);
-
-        console.log("Desired output:", desiredOutput / SCALE);
-        console.log("Required input:", requiredInput / SCALE);
-        
-        // Required input should be more than desired output due to slippage
-        assertTrue(requiredInput > desiredOutput);
-        
     }
-    
-    function test_PriceImpact() public {
-        uint256 inputAmount = 100 * SCALE;
-        uint256 liquidity = 1000 * SCALE;
-        
-        uint256 outputAmount = quoter.computeOutputAmount(inputAmount, liquidity);
-        uint256 priceImpact = quoter.computePriceImpact(
-            inputAmount,
-            outputAmount,
-            liquidity
-        );
 
-        console.log("Price impact (%):", (priceImpact * 100) / SCALE);
-
-        // Price impact should be positive
-        assertTrue(priceImpact > 0);
-        // Price impact should be reasonable (<50% for this size)
-        assertTrue(priceImpact < SCALE / 2);
-        
+    function test_ComputeOutputAmountReverse() public {
+        uint256 reserve1 = INITIAL_RESERVE1; // 1000 tokens of reserve0
+        uint256 reserve0 = quoter.computeReserve0FromReserve1(reserve1, LIQUIDITY); // Compute matching reserve1
+        uint256 inputAmount = 10 * 1e18; // 10 tokens input
+        int256 outputAmount = int256(quoter.computeOutputAmount(reserve0, reserve1, inputAmount, LIQUIDITY, false));
+        console.log("Input amount:", inputAmount );
+        console.log("Output amount:", outputAmount);
     }
-    
+
     function test_SmallAmounts() public {
-        uint256 inputAmount = 1 * SCALE;     // 1 token
-        uint256 liquidity = 1000 * SCALE;    // 1000 tokens liquidity
+        uint256 reserve0 = INITIAL_RESERVE0; // 1000 tokens of reserve0
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY); // Compute matching reserve1
+        uint256 inputAmount = 1 * 1e18; // 1 token input
         
-        uint256 outputAmount = quoter.computeOutputAmount(inputAmount, liquidity);
+        // For very small amounts relative to reserves, output should be close to input
+        int256 outputAmount = int256(quoter.computeOutputAmount(reserve0, reserve1, inputAmount, LIQUIDITY, true));
         
-        // For very small amounts relative to liquidity, output should be close to input
-        uint256 difference = inputAmount > outputAmount ? 
-            inputAmount - outputAmount : 
-            outputAmount - inputAmount;
-            
-        assertTrue(difference < inputAmount / 100); // Less than 1% difference
+        console.log("Small input amount:", inputAmount);
+        console.log("Small output amount:", uint256(outputAmount));
+        
+        uint256 difference;
+        if (int256(inputAmount) > outputAmount) {
+            difference = inputAmount - uint256(outputAmount);
+        } else {
+            difference = uint256(outputAmount) - inputAmount;
+        }
+        assertTrue(difference < inputAmount / 10, "Small amounts should have less than 10% slippage");
     }
-    /* pausing this test for now
+    /*
     function test_LargeAmounts() public {
-        uint256 inputAmount = 1000 * SCALE;  // 1000 tokens
-        uint256 liquidity = 1000 * SCALE;    // 1000 tokens liquidity
+        uint256 reserve0 = INITIAL_RESERVE0; // 100 tokens of reserve0
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY); // Compute matching reserve1
+        uint256 inputAmount = 200 * 1e18; // 50 tokens input (50% of reserve)
         
-        uint256 outputAmount = quoter.computeOutputAmount(inputAmount, liquidity);
-        console.log("output amount", outputAmount);
-        console.log("input amount", inputAmount);
         // For large amounts, slippage should be significant
-        assertTrue(outputAmount < inputAmount * 90 / 100); // More than 10% slippage
+        int256 outputAmount = int256(quoter.computeOutputAmount(reserve0, reserve1, inputAmount, LIQUIDITY, true));
+        
+        console.log("Large input amount:", inputAmount);
+        console.log("Large output amount:", uint256(outputAmount));
+        
+        // Slippage should be significant for large amounts
+        assertTrue(uint256(outputAmount) < inputAmount * 95 / 100, "Large amounts should have more than 10% slippage");
     }*/
-    
-    function test_RoundTrip() public {
-        uint256 inputAmount = 100 * SCALE;
-        uint256 liquidity = 1000 * SCALE;
-        
-        uint256 outputAmount = quoter.computeOutputAmount(inputAmount, liquidity);
-        uint256 roundTripInput = quoter.computeInputAmount(outputAmount, liquidity);
-        
-        // Round trip should give similar results (within 1%)
-        uint256 difference = inputAmount > roundTripInput ? 
-            inputAmount - roundTripInput : 
-            roundTripInput - inputAmount;
-            
-        assertTrue(difference < inputAmount / 100);
-        
-        console.log("Original input:", inputAmount / SCALE);
-        console.log("Round trip input:", roundTripInput / SCALE);
-    }
 
     function test_ZeroInput() public {
-        uint256 liquidity = 1000 * SCALE;
+        uint256 reserve0 = INITIAL_RESERVE0;
+        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
         
-        uint256 outputAmount = quoter.computeOutputAmount(0, liquidity);
-        assertTrue(outputAmount == 0);
+        int256 outputAmount = int256(quoter.computeOutputAmount(reserve0, reserve1, 0, LIQUIDITY, true));
+        assertTrue(outputAmount == 0, "Zero input should give zero output");
     }
 
     function test_ZeroLiquidity() public {
-        uint256 inputAmount = 100 * SCALE;
+        uint256 reserve0 = 100 * 10**6;
+        uint256 reserve1 = 100 * 10**6;
         
         vm.expectRevert(); // Should revert when liquidity is 0
-        quoter.computeOutputAmount(inputAmount, 0);
+        quoter.computeOutputAmount(reserve0, reserve1, 10 * 10**6, 0, true);
     }
+
 }

@@ -7,13 +7,10 @@ import {Market} from "../types/MarketTypes.sol";
 import {CreateMarketParams} from "../types/MarketTypes.sol";
 
 interface IPredictionMarketHook {
-
     /// @notice Creates a new market and deposits collateral
     /// @param params Struct containing all market creation parameters
     /// @return The market ID
-    function createMarketAndDepositCollateral(
-        CreateMarketParams calldata params
-    ) external returns (bytes32);
+    function createMarketAndDepositCollateral(CreateMarketParams calldata params) external returns (bytes32);
 
     /// @notice Resolves the market with the final outcome
     /// @param marketId The ID of the market
@@ -57,4 +54,4 @@ interface IPredictionMarketHook {
     /// @param marketId The ID of the market
     /// @return Market struct containing market information
     function getMarketById(bytes32 marketId) external view returns (Market memory);
-} 
+}

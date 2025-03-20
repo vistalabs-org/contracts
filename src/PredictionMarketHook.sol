@@ -30,6 +30,7 @@ import {CreateMarketParams} from "./types/MarketTypes.sol";
 contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
+
     IPoolManager public poolm;
     PoolModifyLiquidityTest public posm;
     PoolCreationHelper public poolCreationHelper;
@@ -44,7 +45,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
     /// @notice Mapping to track claimed tokens (separate from liquidity tokens)
     mapping(bytes32 => uint256) private _claimedTokens;
-    
+
     // Map pool IDs to market IDs
     mapping(PoolId => bytes32) private _poolToMarketId;
 
@@ -63,58 +64,50 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     event PoolCreated(PoolId poolId);
     event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
 
-    constructor(
-        IPoolManager _poolManager,
-        PoolModifyLiquidityTest _posm,
-        PoolCreationHelper _poolCreationHelper
-    ) BaseHook(_poolManager) {
+    constructor(IPoolManager _poolManager, PoolModifyLiquidityTest _posm, PoolCreationHelper _poolCreationHelper)
+        BaseHook(_poolManager)
+    {
         poolm = IPoolManager(_poolManager);
         posm = PoolModifyLiquidityTest(_posm);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
     }
 
-    function getHookPermissions()
-        public
-        pure
-        override
-        returns (Hooks.Permissions memory)
-    {
-        return
-            Hooks.Permissions({
-                beforeInitialize: false,
-                afterInitialize: false,
-                beforeAddLiquidity: true,
-                afterAddLiquidity: false,
-                beforeRemoveLiquidity: true,
-                afterRemoveLiquidity: false,
-                beforeSwap: true,
-                afterSwap: false,
-                beforeDonate: false,
-                afterDonate: false,
-                beforeSwapReturnDelta: false,
-                afterSwapReturnDelta: false,
-                afterAddLiquidityReturnDelta: false,
-                afterRemoveLiquidityReturnDelta: false
-            });
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
+        return Hooks.Permissions({
+            beforeInitialize: false,
+            afterInitialize: false,
+            beforeAddLiquidity: true,
+            afterAddLiquidity: false,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: false,
+            beforeSwap: true,
+            afterSwap: false,
+            beforeDonate: false,
+            afterDonate: false,
+            beforeSwapReturnDelta: false,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
+        });
     }
 
     // -----------------------------------------------
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
-    function _beforeSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata,
-        bytes calldata
-    ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
+        internal
+        view
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         // Get market from pool key
         PoolId poolId = key.toId();
         Market memory market = _getMarketFromPoolId(poolId);
-        
+
         // Check market exists and is active
         require(market.state == MarketState.Active, "Market not active");
-        
+
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -127,26 +120,25 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Get market from pool key
         PoolId poolId = key.toId();
         Market memory market = _getMarketFromPoolId(poolId);
-        
+
         // Check market exists and is active
         require(market.state == MarketState.Active, "Market not active");
-        
+
         // For prediction markets, we want to constrain the price between 0.01 and 0.99 USDC
         // These ticks correspond to those prices (rounded to valid tick spacing)
         int24 minValidTick = -9200; // Slightly above 0.01 USDC
-        int24 maxValidTick = -100;  // Slightly below 0.99 USDC
-        
+        int24 maxValidTick = -100; // Slightly below 0.99 USDC
+
         // Ensure ticks are valid with the tick spacing
         minValidTick = (minValidTick / TICK_SPACING) * TICK_SPACING;
         maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
-        
+
         // Enforce position is within the valid price range for prediction markets
         require(
-            params.tickLower >= minValidTick && 
-            params.tickUpper <= maxValidTick,
+            params.tickLower >= minValidTick && params.tickUpper <= maxValidTick,
             "Position must be within 0.01-0.99 price range"
         );
-        
+
         return BaseHook.beforeAddLiquidity.selector;
     }
 
@@ -159,22 +151,20 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Get market from pool key
         PoolId poolId = key.toId();
         Market memory market = _getMarketFromPoolId(poolId);
-        
+
         // Check market exists and is active
         require(market.state == MarketState.Active, "Market not active");
-        
+
         // Only allow removals after market is resolved
         if (market.state != MarketState.Resolved) {
             revert DirectLiquidityNotAllowed();
         }
-        
+
         return BaseHook.beforeRemoveLiquidity.selector;
     }
 
     //////////////////////////
-    function createMarketAndDepositCollateral(
-        CreateMarketParams calldata params
-    ) public returns (bytes32) {
+    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
         // Create YES and NO tokens
         OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
         OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
@@ -189,19 +179,19 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
         // Transfer collateral to this contract
         IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
-        
+
         // Create pool keys
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(address(yesToken)),
-            currency1: Currency.wrap(params.collateralAddress),
+            currency0: Currency.wrap(params.collateralAddress),
+            currency1: Currency.wrap(address(yesToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
 
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(address(noToken)),
-            currency1: Currency.wrap(params.collateralAddress),
+            currency0: Currency.wrap(params.collateralAddress),
+            currency1: Currency.wrap(address(noToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
@@ -230,14 +220,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             description: params.description,
             endTimestamp: block.timestamp + params.duration
         });
-        
+
         // Add market ID to the array of all markets
         _allMarketIds.push(marketId);
-        
+
         // Map both pool IDs to this market ID
         _poolToMarketId[yesPoolKey.toId()] = marketId;
         _poolToMarketId[noPoolKey.toId()] = marketId;
-        
+
         return marketId;
     }
 
@@ -250,32 +240,32 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function getAllMarkets() external view returns (Market[] memory) {
         uint256 count = _allMarketIds.length;
         Market[] memory markets = new Market[](count);
-        
+
         for (uint256 i = 0; i < count; i++) {
             markets[i] = _markets[_allMarketIds[i]];
         }
-        
+
         return markets;
     }
 
     // Function to get markets with pagination
     function getMarkets(uint256 offset, uint256 limit) external view returns (Market[] memory) {
         uint256 count = _allMarketIds.length;
-        
+
         // Ensure offset is valid
         if (offset >= count) {
             return new Market[](0);
         }
-        
+
         // Calculate actual limit
         uint256 actualLimit = (offset + limit > count) ? count - offset : limit;
-        
+
         Market[] memory markets = new Market[](actualLimit);
-        
+
         for (uint256 i = 0; i < actualLimit; i++) {
             markets[i] = _markets[_allMarketIds[offset + i]];
         }
-        
+
         return markets;
     }
 
@@ -328,17 +318,17 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     /// @param marketId The ID of the market
     function claimWinnings(bytes32 marketId) external {
         Market storage market = _markets[marketId];
-        
+
         // Check market is resolved
         if (market.state != MarketState.Resolved) {
             revert MarketNotResolved();
         }
-        
+
         // Check user hasn't already claimed
         if (_hasClaimed[marketId][msg.sender]) {
             revert AlreadyClaimed();
         }
-        
+
         // Determine which token is the winning token
         address winningToken;
         if (market.outcome) {
@@ -348,37 +338,37 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             // NO outcome
             winningToken = address(market.noToken);
         }
-        
+
         // Get user's token balance
         uint256 tokenBalance = OutcomeToken(winningToken).balanceOf(msg.sender);
-        
+
         // Ensure user has tokens to claim
         require(tokenBalance > 0, "No tokens to claim");
-        
+
         // Calculate collateral to return (accounting for decimal differences)
         // YES/NO tokens have 18 decimals, collateral might have different decimals
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
-        uint256 decimalAdjustment = 10**(18 - collateralDecimals);
-        
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+
         // Calculate claim amount
         uint256 claimAmount = tokenBalance / decimalAdjustment;
-        
+
         // Ensure there's enough collateral left to claim
         uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
         require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
-        
+
         // Burn the winning tokens
         OutcomeToken(winningToken).burnFrom(msg.sender, tokenBalance);
-        
+
         // Transfer collateral to user
         IERC20(market.collateralAddress).transfer(msg.sender, claimAmount);
-        
+
         // Update claimed tokens amount
         _claimedTokens[marketId] += claimAmount;
-        
+
         // Mark user as claimed
         _hasClaimed[marketId][msg.sender] = true;
-        
+
         // Emit event
         emit WinningsClaimed(marketId, msg.sender, claimAmount);
     }
@@ -414,5 +404,4 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function getMarketById(bytes32 marketId) external view returns (Market memory) {
         return _markets[marketId];
     }
-
 }
