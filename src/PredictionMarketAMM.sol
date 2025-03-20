@@ -132,11 +132,15 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
 
         // Get current reserves
         (uint256 reserve0, uint256 reserve1) = getReserves(key);
+        console.log("reserve0: ", reserve0);
+        console.log("reserve1: ", reserve1);
 
         // Determine if we're swapping in token0 or token1
         bool zeroForOne = params.zeroForOne;
-        uint256 amountIn = params.amountSpecified > 0 ? uint256(params.amountSpecified) : 0;
+        console.log("zeroForOne: ", zeroForOne);
 
+        uint256 amountIn = params.amountSpecified > 0 ? uint256(params.amountSpecified) : 0;
+        console.log("amountIn: ", amountIn);
         // Calculate output amount using our custom invariant
         int256 amountOut = quoter.computeOutputAmount(
             zeroForOne ? reserve0 : reserve1,  // Input reserve
@@ -145,6 +149,8 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             LIQUIDITY,
             zeroForOne
         );
+
+        console.log("amountOut: ", amountOut);
 
         // Create the BeforeSwapDelta
         BeforeSwapDelta delta;
@@ -155,6 +161,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             // User gives token1, gets token0
             delta = toBeforeSwapDelta(-int128(amountOut), int128(int256(amountIn)));
         }
+        
 
         return (BaseHook.beforeSwap.selector, delta, 0);
     }
@@ -176,6 +183,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         CallbackData memory callbackData = abi.decode(data, (CallbackData));
         // sending equal amount
         console.log("callbackData: ", callbackData.amountEach);
+        console.log("sender: ", callbackData.sender);
 
         callbackData.currency0.settle(poolManager, callbackData.sender, callbackData.amountEach, false);
         callbackData.currency1.settle(poolManager, callbackData.sender, callbackData.amountEach, false);
@@ -441,18 +449,21 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     // Users can mint based on current price to provide liquidity to the market
     function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) external {
         Market memory market = _markets[marketId];
+        
         // Calculate collateral to return (accounting for decimal differences)
         // YES/NO tokens have 18 decimals, collateral might have different decimals
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
 
-        // 1 unit of collateral = 1 unit of YES and one of NO token (100 USDC mints 100 YES and 100 NO)
-        // take collateral from the user
+        // Take collateral from the user
         IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
 
-        // mint YES and NO tokens to the user
-        market.yesToken.mint(msg.sender, collateralAmount / decimalAdjustment);
-        market.noToken.mint(msg.sender, collateralAmount / decimalAdjustment);
+        // Calculate token amount to mint (adjusting for decimal differences)
+        uint256 tokenAmount = collateralAmount * decimalAdjustment;
+
+        // Mint YES and NO tokens to the user
+        market.yesToken.mint(msg.sender, tokenAmount);
+        market.noToken.mint(msg.sender, tokenAmount);
     }
 
     // Helper function to get current reserves

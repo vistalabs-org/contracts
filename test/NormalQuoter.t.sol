@@ -47,8 +47,8 @@ contract NormalQuoterTest is Test {
 
         // add 10 to reserve0, reserve1 should decrease
         reserve0 += 10 * 1e18;
-        reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
-        assertTrue(reserve1 < INITIAL_RESERVE1, "Reserve1 should decrease when reserve0 increases");
+        uint256 reserve1after = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
+        assertTrue(reserve1after < reserve1, "Reserve1 should decrease when reserve0 increases");
     }
 
     function test_ComputeOutputAmount() public {

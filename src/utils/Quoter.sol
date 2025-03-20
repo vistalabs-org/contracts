@@ -20,7 +20,7 @@ contract NormalQuoter {
         uint256 y = reserve0; // Initial guess
         
         // Track the best result so far
-        uint256 bestY = reserve0;
+        uint256 bestY = 0;
         int256 bestResult = type(int256).max;
         
         // Binary search for 64 iterations
@@ -83,36 +83,38 @@ contract NormalQuoter {
         
         // Use the best result we found
         console.log("Best y found:", bestY);
-        
-        // Ensure reserve1 decreases as reserve0 increases
-        if (reserve0 > INITIAL_RESERVE0 && bestY >= INITIAL_RESERVE1) {
-            // If reserve0 increased but reserve1 didn't decrease, force it to decrease
-            uint256 excess = reserve0 - INITIAL_RESERVE0;
-            uint256 newReserve1 = INITIAL_RESERVE1 > excess ? INITIAL_RESERVE1 - excess : 1;
-            console.log("Adjusted reserve1:", newReserve1);
-            return newReserve1;
-        }
+    
         
         return bestY;
     }
     
-    // Constants for reference points
-    uint256 constant INITIAL_RESERVE0 = 39893939394 * 1e10;
-    uint256 constant INITIAL_RESERVE1 = 398945166875987801370;
     
     // Given reserve1 (y) and liquidity L, compute reserve0 (x)
     function computeReserve0FromReserve1(uint256 reserve1, uint256 liquidity) public view returns (uint256) {
         require(liquidity > 0, "Invalid liquidity");
         
-        // For our invariant, we expect x > y for most cases
-        // Start with a guess that's greater than reserve1
-        uint256 low = reserve1;
+        console.log("Computing reserve0 from reserve1:", reserve1);
+        console.log("Liquidity:", liquidity);
+        
+        // For our initial implementation, we want reserve0 to be close to reserve1
+        // Start with a reasonable range
+        uint256 low = 0;
         uint256 high = reserve1 * 2;
-        uint256 x;
+        uint256 x = reserve1; // Initial guess
+        
+        // Track the best result so far
+        uint256 bestX = reserve1;
+        int256 bestResult = type(int256).max;
         
         // Binary search for 64 iterations
         for (uint256 i = 0; i < 64; i++) {
             x = (low + high) / 2;
+            
+            // Prevent x from becoming too small
+            if (x < liquidity / 100) {
+                x = liquidity / 100;
+                break;
+            }
             
             // Compute left side of equation: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
             int256 diff = int256(reserve1) - int256(x);
@@ -130,16 +132,42 @@ contract NormalQuoter {
             // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
             int256 result = term1 + term2 - int256(reserve1);
             
-            // If result > 0, x is too low
-            // If result < 0, x is too high
-            if (result > 0) {
+            // Log some iterations for debugging
+            if (i == 0 || i == 1 || i == 2 || i == 63) {
+                console.log("Iteration", i);
+                console.log("x:", x);
+                console.log("result:", result);
+            }
+            
+            // Track the best result (closest to zero)
+            if (result < 0) result = -result; // Take absolute value
+            if (result < bestResult) {
+                bestResult = result;
+                bestX = x;
+            }
+            
+            // Check if we're close enough to a solution
+            if (result < 1e15) { // Small enough threshold
+                break;
+            }
+            
+            // If the high-low range gets too small, stop to prevent converging to zero
+            if (high - low < liquidity / 1000) {
+                break;
+            }
+            
+            // Update search range
+            if (term1 + term2 > int256(reserve1)) {
                 low = x;
             } else {
                 high = x;
             }
         }
         
-        return x;
+        // Use the best result we found
+        console.log("Best x found:", bestX);
+
+        return bestX;
     }
     
     // Calculate the output amount for a swap

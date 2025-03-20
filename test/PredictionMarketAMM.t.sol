@@ -153,31 +153,75 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertEq(collateralToken.balanceOf(address(hook)), COLLATERAL_AMOUNT, "Collateral not transferred to contract");
     }
 
+    function test_mintOutcomeTokens_correctRatio() public {
+        // Create market
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Record initial balances
+        uint256 initialYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
+        uint256 initialNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
+        uint256 initialCollateralBalance = collateralToken.balanceOf(address(this));
+        
+        // Amount to mint
+        uint256 mintAmount = 10 * 10**6; // 10 USDC (assuming 6 decimals)
+        
+        // Calculate expected token amount (adjusting for decimal differences)
+        uint256 collateralDecimals = collateralToken.decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+        uint256 expectedTokenAmount = mintAmount * decimalAdjustment;
+        
+        // Approve collateral
+        collateralToken.approve(address(hook), mintAmount);
+        
+        // Mint outcome tokens
+        hook.mintOutcomeTokens(marketId, mintAmount);
+        
+        // Check balances after minting
+        uint256 newYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
+        uint256 newNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
+        uint256 newCollateralBalance = collateralToken.balanceOf(address(this));
+        
+        // Verify 1:1:1 ratio with decimal adjustment
+        assertEq(newYesBalance - initialYesBalance, expectedTokenAmount, "Should mint adjusted amount of YES tokens");
+        assertEq(newNoBalance - initialNoBalance, expectedTokenAmount, "Should mint adjusted amount of NO tokens");
+        assertEq(initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral");
+    }
+
     function test_swapWithNormalDistribution() public {
         // Use the helper function instead of modifier
         bytes32 marketId = createTestMarket();
 
         Market memory market = hook.getMarketById(marketId);
 
-        // Approve YES and NO tokens to the hook
+        // Approve YES NO and collateral tokens to the hook for liquidity
         OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
         OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
+        collateralToken.approve(address(hook), type(uint256).max);
 
+        // Approve YES and NO tokens to router for the swap
+        OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
+        OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
+        
         // Add initial liquidity
         // 398.93939394 398.93939394 satisfies the invariant
         // needs to have 18 decimals 
+        console.log("Adding liquidity");
+
+        hook.mintOutcomeTokens(marketId, 39893939394 * 1e10);
+        console.log("outcome tokens balance of sender", OutcomeToken(address(market.yesToken)).balanceOf(address(this)));
         hook.addLiquidity(market.yesPoolKey, 39893939394 * 1e10);
 
         // Try to swap
         vm.startPrank(address(this));
 
-        collateralToken.approve(address(poolSwapTest), 5 * 1e6);
+        collateralToken.approve(address(poolSwapTest), type(uint256).max);
 
         BalanceDelta delta = poolSwapTest.swap(
             market.yesPoolKey,
             IPoolManager.SwapParams({
                 zeroForOne: true,
-                amountSpecified: 5 * 1e6,
+                amountSpecified: 10 * 1e6,
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
             }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
