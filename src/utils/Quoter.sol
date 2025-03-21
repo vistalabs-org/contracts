@@ -204,4 +204,5 @@ contract NormalQuoter {
     function abs(int256 x) internal pure returns (int256) {
         return x >= 0 ? x : -x;
     }
+
 }

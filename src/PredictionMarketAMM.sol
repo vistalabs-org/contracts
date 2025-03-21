@@ -28,6 +28,8 @@ import {PoolCreationHelper} from "./PoolCreationHelper.sol";
 import {CreateMarketParams} from "./types/MarketTypes.sol";
 import "./utils/Quoter.sol";
 import {toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+
 
 /// @title PredictionMarketHook - Hook for prediction market management
 
@@ -36,6 +38,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     using FixedPointMathLib for uint160;
     using CurrencyLibrary for Currency;
     using CurrencySettler for Currency;
+    using SafeCast for uint256;
 
     IPoolManager public poolm;
     PoolModifyLiquidityTest public posm;
@@ -117,46 +120,55 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
+    /// @notice Modifier to check if a market is active
+    /// @param poolId The ID of the pool associated with the market
+    modifier onlyActiveMarket(PoolId poolId) {
+        Market memory market = _getMarketFromPoolId(poolId);
+        require(market.state == MarketState.Active, "Market not active");
+        _;
+    }
+
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         bytes calldata data
-    ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
-        // Get market from pool key
-        PoolId poolId = key.toId();
-        Market memory market = _getMarketFromPoolId(poolId);
+    ) internal override onlyActiveMarket(key.toId()) returns (bytes4, BeforeSwapDelta, uint24) {
+        // Determine if the swap is exact input or exact output
+        bool exactInput = params.amountSpecified < 0;
 
-        // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
+        // Determine which currency is specified and which is unspecified
+        (Currency specified, Currency unspecified) =
+            (params.zeroForOne == exactInput) ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
 
-        // Get current reserves
-        (uint256 reserve0, uint256 reserve1) = getReserves(key);
+        // Get the positive specified amount
+        uint256 specifiedAmount = exactInput ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
 
-        // Determine if we're swapping in token0 or token1
-        bool zeroForOne = params.zeroForOne;
-        uint256 amountIn = params.amountSpecified > 0 ? uint256(params.amountSpecified) : 0;
+        // Get the amount of the unspecified currency to be taken or settled
+        uint256 unspecifiedAmount = getAmountUnspecified(key, params);
 
-        // Calculate output amount and deltas using our custom invariant
-        (int256 inputDelta, int256 outputDelta) = quoter.computeDeltas(
-            zeroForOne ? reserve0 : reserve1,  // Input reserve
-            zeroForOne ? reserve1 : reserve0,  // Output reserve
-            amountIn,
-            LIQUIDITY,
-            zeroForOne
-        );
+        // New delta must be returned, so store in memory
+        BeforeSwapDelta returnDelta;
 
-        // Create the BeforeSwapDelta
-        BeforeSwapDelta delta;
-        if (zeroForOne) {
-            // User gives token0, gets token1
-            delta = toBeforeSwapDelta(int128(inputDelta), int128(outputDelta));
+        if (exactInput) {
+            // For exact input swaps:
+            // 1. Take the specified input (user-given) amount from this contract's balance in the pool
+            specified.take(poolManager, address(this), specifiedAmount, true);
+            // 2. Send the calculated output amount to this contract's balance in the pool
+            unspecified.settle(poolManager, address(this), unspecifiedAmount, true);
+
+            returnDelta = toBeforeSwapDelta(specifiedAmount.toInt128(), -unspecifiedAmount.toInt128());
         } else {
-            // User gives token1, gets token0
-            delta = toBeforeSwapDelta(int128(outputDelta), int128(inputDelta));
+            // For exact output swaps:
+            // 1. Take the calculated input amount from this contract's balance in the pool
+            unspecified.take(poolManager, address(this), unspecifiedAmount, true);
+            // 2. Send the specified (user-given) output amount to this contract's balance in the pool
+            specified.settle(poolManager, address(this), specifiedAmount, true);
+
+            returnDelta = toBeforeSwapDelta(-specifiedAmount.toInt128(), unspecifiedAmount.toInt128());
         }
 
-        return (BaseHook.beforeSwap.selector, delta, 0);
+        return (this.beforeSwap.selector, returnDelta, 0);
     }
 
     function _beforeAddLiquidity(
@@ -466,8 +478,81 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         reserve1 = CurrencyLibrary.balanceOf(key.currency1, address(poolManager));
     }
 
+    function _computeDeltas(PoolKey calldata key, IPoolManager.SwapParams calldata params) internal view returns (int256 inputDelta, int256 outputDelta) {
+        (uint256 reserve0, uint256 reserve1) = _getReserves(key);
+        // Calculate deltas using our custom invariant
+        (int256 inputDelta, int256 outputDelta) = quoter.computeDeltas(
+            params.zeroForOne ? reserve0 : reserve1,  // Input reserve
+            params.zeroForOne ? reserve1 : reserve0,  // Output reserve
+            uint256(params.amountSpecified),
+            LIQUIDITY,
+            params.zeroForOne
+        );
+        return (inputDelta, outputDelta);
+    }
+
     // Public wrapper for testing
     function getReserves(PoolKey calldata key) public view returns (uint256 reserve0, uint256 reserve1) {
         return _getReserves(key);
+    }
+
+    // Get the unspecified amount for a swap based on the swap parameters
+    function getAmountUnspecified(
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params
+    ) public view returns (uint256 amountUnspecified) {
+        // Get current reserves
+        (uint256 reserve0, uint256 reserve1) = getReserves(key);
+        
+        // Determine if this is an exact input swap (positive amountSpecified)
+        bool isExactInput = params.amountSpecified > 0;
+        
+        // Get the absolute value of amountSpecified
+        uint256 amountSpecified = isExactInput ? 
+            uint256(params.amountSpecified) : 
+            uint256(-params.amountSpecified);
+        
+        if (isExactInput) {
+            // For exact input swaps, calculate the new input reserve
+            uint256 inputReserve = params.zeroForOne ? reserve0 : reserve1;
+            uint256 outputReserve = params.zeroForOne ? reserve1 : reserve0;
+            uint256 newInputReserve = inputReserve + amountSpecified;
+            
+            // Calculate new output reserve based on the invariant
+            uint256 newOutputReserve;
+            if (params.zeroForOne) {
+                // If swapping token0 for token1, calculate new reserve1 from new reserve0
+                newOutputReserve = quoter.computeReserve1FromReserve0(newInputReserve, LIQUIDITY);
+            } else {
+                // If swapping token1 for token0, calculate new reserve0 from new reserve1
+                newOutputReserve = quoter.computeReserve0FromReserve1(newInputReserve, LIQUIDITY);
+            }
+            
+            // The unspecified amount is the output amount
+            amountUnspecified = outputReserve > newOutputReserve ? 
+                outputReserve - newOutputReserve : 0;
+        } else {
+            // For exact output swaps, we need to calculate the input needed
+            // First, calculate what the new output reserve would be
+            uint256 outputReserve = params.zeroForOne ? reserve1 : reserve0;
+            uint256 newOutputReserve = outputReserve - amountSpecified;
+            
+            // Then, calculate what the new input reserve should be
+            uint256 newInputReserve;
+            if (params.zeroForOne) {
+                // If swapping token0 for token1, calculate new reserve0 from new reserve1
+                newInputReserve = quoter.computeReserve0FromReserve1(newOutputReserve, LIQUIDITY);
+            } else {
+                // If swapping token1 for token0, calculate new reserve1 from new reserve0
+                newInputReserve = quoter.computeReserve1FromReserve0(newOutputReserve, LIQUIDITY);
+            }
+            
+            // The input amount is the difference between the new and current input reserves
+            uint256 inputReserve = params.zeroForOne ? reserve0 : reserve1;
+            amountUnspecified = newInputReserve > inputReserve ? 
+                newInputReserve - inputReserve : 0;
+        }
+        
+        return amountUnspecified;
     }
 }

@@ -38,6 +38,36 @@ contract PredictionMarketHookTest is Test, Deployers {
     PoolModifyLiquidityTest public poolModifyLiquidityTest;
     NormalQuoter public quoter;
 
+    // Modifier to create a market and add liquidity
+    modifier withMarketAndLiquidity() {
+        // Create market
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Mint outcome tokens
+        uint256 mintAmount = 1000 * 10**6; // 1000 USDC
+        collateralToken.approve(address(hook), type(uint256).max);
+        hook.mintOutcomeTokens(marketId, mintAmount);
+        
+        // Add liquidity to the pool
+        uint256 liquidityAmount = 399 * 10**18; // 399 YES tokens
+        OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
+        OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
+        hook.addLiquidity(market.yesPoolKey, liquidityAmount);
+        
+        // Approve tokens for swapping
+        OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
+        OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
+        collateralToken.approve(address(poolSwapTest), type(uint256).max);
+        
+        // Store market in a storage variable for tests to access
+        testMarket = market;
+        _;
+    }
+
+    // Storage variable to hold the market for tests
+    Market private testMarket;
+
     function setUp() public {
         // Deploy Uniswap v4 infrastructure
         console.log("Deploying Uniswap v4 infrastructure from ", address(this));
@@ -188,40 +218,16 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertEq(initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral");
     }
 
-    function test_swapWithNormalDistribution() public {
-        // Use the helper function instead of modifier
-        bytes32 marketId = createTestMarket();
-
-        Market memory market = hook.getMarketById(marketId);
-
-        // Approve YES NO and collateral tokens to the hook for liquidity
-        OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
-        OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
-        collateralToken.approve(address(hook), type(uint256).max);
-
-        // Approve YES and NO tokens to router for the swap
-        OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
-        OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
-        
-        // Add initial liquidity
-        // 398.93939394 398.93939394 satisfies the invariant
-        // needs to have 18 decimals 
-        console.log("Adding liquidity");
-
-        hook.mintOutcomeTokens(marketId, 39893939394 * 1e10);
-        console.log("outcome tokens balance of sender", OutcomeToken(address(market.yesToken)).balanceOf(address(this)));
-        hook.addLiquidity(market.yesPoolKey, 39893939394 * 1e10);
-
+    // Refactored test using the modifier
+    function test_swapWithNormalDistribution() public withMarketAndLiquidity {
         // Try to swap
         vm.startPrank(address(this));
 
-        collateralToken.approve(address(poolSwapTest), type(uint256).max);
-
         BalanceDelta delta = poolSwapTest.swap(
-            market.yesPoolKey,
+            testMarket.yesPoolKey,
             IPoolManager.SwapParams({
                 zeroForOne: true,
-                amountSpecified: 10 * 1e6,
+                amountSpecified: 10 * 1e18,
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
             }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
@@ -230,7 +236,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.stopPrank();
 
         // Verify the swap followed our normal distribution pricing
-        (uint256 reserve0, uint256 reserve1) = hook.getReserves(market.yesPoolKey);
+        (uint256 reserve0, uint256 reserve1) = hook.getReserves(testMarket.yesPoolKey);
         console.log("Reserve0 after swap:", reserve0);
         console.log("Reserve1 after swap:", reserve1);
 
@@ -238,7 +244,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Call the amount0() and amount1() functions
         int128 amount0 = delta.amount0();
         int128 amount1 = delta.amount1();
-        assertTrue(-amount1 < amount0, "Output should be less than input");
+        console.log("amount0", amount0);
+        console.log("amount1", amount1);
+        assertTrue(-amount1 < amount0, "Output should be less than input due to slippage");
     }
 
     function test_addLiquidity() public {
