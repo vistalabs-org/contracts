@@ -218,11 +218,118 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertEq(initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral");
     }
 
-    // Refactored test using the modifier
+    // Parameterized test function to test all swap combinations
+    function _testSwap(
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96
+    ) internal withMarketAndLiquidity {
+        // Get reserves before swap
+        (uint256 reserve0Before, uint256 reserve1Before) = hook.getReserves(testMarket.yesPoolKey);
+        console.log("Reserve0 before swap:", reserve0Before);
+        console.log("Reserve1 before swap:", reserve1Before);
+        
+        // Calculate expected amount
+        uint256 expectedAmount = hook.getAmountUnspecified(
+            testMarket.yesPoolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            })
+        );
+        console.log("Expected amount:", expectedAmount);
+        
+        // Perform swap
+        BalanceDelta delta = poolSwapTest.swap(
+            testMarket.yesPoolKey,
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+        
+        // Get reserves after swap
+        (uint256 reserve0After, uint256 reserve1After) = hook.getReserves(testMarket.yesPoolKey);
+        console.log("Reserve0 after swap:", reserve0After);
+        console.log("Reserve1 after swap:", reserve1After);
+        
+        // Verify delta
+        int128 amount0 = delta.amount0();
+        int128 amount1 = delta.amount1();
+        console.log("Delta amount0:", amount0);
+        console.log("Delta amount1:", amount1);
+        
+        // Check appropriate condition based on swap direction and type
+        bool isExactInput = amountSpecified > 0;
+        
+        if (zeroForOne) {
+            if (isExactInput) {
+                // zeroForOne + exactInput: output should be less than input due to slippage
+                assertTrue(-amount1 < amount0, "Output should be less than input due to slippage");
+            } else {
+                // zeroForOne + exactOutput: For exact output, we're getting exactly what we asked for
+                // Convert to int256 for comparison to avoid overflow
+                // And that the input amount is less than the output amount due to slippage
+                assertTrue(amount1 < -amount0, "Input should be less than output due to slippage");
+            }
+        } else {
+            if (isExactInput) {
+                // oneForZero + exactInput: output should be less than input due to slippage
+                assertTrue(-amount0 < amount1, "Output should be less than input due to slippage");
+            } else {
+                // oneForZero + exactOutput: For exact output, we're getting exactly what we asked for
+                // Convert to int256 for comparison to avoid overflo
+                
+                // And that the input amount is greater than the output amount due to slippage
+                // assertTrue(amount1 < -amount0, "Input should be less than output due to slippage");
+                assertTrue(amount1 < -amount0, "Input should be greater than output due to slippage");
+            }
+        }
+    }
+
+    // Test case 1: zeroForOne true and positive amountSpecified (exact input)
+    function test_swap_ZeroForOne_ExactInput() public {
+        _testSwap(
+            true,                       // zeroForOne
+            10 * 1e18,                  // amountSpecified (positive = exact input)
+            TickMath.MIN_SQRT_PRICE + 1 // sqrtPriceLimitX96
+        );
+    }
+
+    // Test case 2: zeroForOne true and negative amountSpecified (exact output)
+    function test_swap_ZeroForOne_ExactOutput() public {
+        _testSwap(
+            true,                       // zeroForOne
+            -5 * 1e18,                  // amountSpecified (negative = exact output)
+            TickMath.MAX_SQRT_PRICE - 1 // sqrtPriceLimitX96
+        );
+    }
+
+    // Test case 3: zeroForOne false and positive amountSpecified (exact input)
+    function test_swap_OneForZero_ExactInput() public {
+        _testSwap(
+            false,                      // zeroForOne
+            10 * 1e18,                  // amountSpecified (positive = exact input)
+            TickMath.MAX_SQRT_PRICE - 1 // sqrtPriceLimitX96
+        );
+    }
+
+    // Test case 4: zeroForOne false and negative amountSpecified (exact output)
+    function test_swap_OneForZero_ExactOutput() public {
+        _testSwap(
+            false,                      // zeroForOne
+            -5 * 1e18,                  // amountSpecified (negative = exact output)
+            TickMath.MIN_SQRT_PRICE + 1 // sqrtPriceLimitX96
+        );
+    }
+
+    // Keep the original test for backward compatibility
     function test_swapWithNormalDistribution() public withMarketAndLiquidity {
         // Try to swap
-        vm.startPrank(address(this));
-
         BalanceDelta delta = poolSwapTest.swap(
             testMarket.yesPoolKey,
             IPoolManager.SwapParams({
@@ -233,7 +340,6 @@ contract PredictionMarketHookTest is Test, Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ""
         );
-        vm.stopPrank();
 
         // Verify the swap followed our normal distribution pricing
         (uint256 reserve0, uint256 reserve1) = hook.getReserves(testMarket.yesPoolKey);
@@ -241,7 +347,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         console.log("Reserve1 after swap:", reserve1);
 
         // The output amount should be less than input due to slippage
-        // Call the amount0() and amount1() functions
         int128 amount0 = delta.amount0();
         int128 amount1 = delta.amount1();
         console.log("amount0", amount0);
