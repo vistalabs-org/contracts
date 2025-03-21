@@ -9,17 +9,14 @@ remappings = [
     "@eigenlayer-middleware/src/=lib/eigenlayer-middleware/src/"
 ]
 
-# Basic compiler settings
-auto_detect_solc = true
 optimizer = true
-optimizer_runs = 1000
+optimizer_runs = 1
 
-# Basic configuration
 solc = "0.8.27"
 evm_version = "cancun"
 
 # Ignore warnings that might be causing issues
-ignored_error_codes = [8760, 5574, 1878, 2333, 9582]
+ignored_error_codes = [8760, 5574, 1878, 2333, 9582, 2072, 5667, 3628]
 
 # Use a model linker to handle conflicts in imported libraries
 model_checker.engine = "none"
@@ -32,3 +29,6 @@ fs_permissions = [{ access = "read-write", path = "./"}]
 isolation = true
 # Ensure we're not reusing any state
 fork_block_number = 0
+
+[profile.ci]
+verbosity = 4

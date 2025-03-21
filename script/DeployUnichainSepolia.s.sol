@@ -13,6 +13,9 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {ERC20Mock} from "../test/utils/ERC20mock.sol";
+import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
+import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
+import {AIAgent} from "../src/oracle/AIAgent.sol";
 
 contract DeployPredictionMarket is Script {
     PredictionMarketHook public hook;
@@ -22,6 +25,9 @@ contract DeployPredictionMarket is Script {
     PoolCreationHelper public poolCreationHelper;
     ERC20Mock public collateralToken;
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
+    address public oracle;
+    address public registry;
+    address public agent;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
@@ -94,5 +100,78 @@ contract DeployPredictionMarket is Script {
         
         vm.stopBroadcast();
         console.log("Deployment complete!");
+
+        // Add AI Oracle component deployments
+        deployAIOracleComponents();
+        
+        // Add this to output AI Oracle addresses
+        logAIOracleAddresses();
+    }
+
+    function deployAIOracleComponents() internal {
+        // Deploy Oracle infrastructure
+        console.log("Deploying AI Oracle components to Unichain Sepolia...");
+        
+        // Use this test contract address for all AVS middleware components
+        address avsDirectory = address(this);
+        address stakeRegistry = address(this);
+        address rewardsCoordinator = address(this);
+        address delegationManager = address(this);
+        address allocationManager = address(this);
+        
+        // Deploy Oracle
+        oracle = address(new AIOracleServiceManager(
+            avsDirectory,
+            stakeRegistry,
+            rewardsCoordinator,
+            delegationManager,
+            allocationManager
+        ));
+        console.log("AIOracleServiceManager deployed at:", oracle);
+        
+        // Deploy Registry with the oracle address
+        registry = address(new AIAgentRegistry(oracle));
+        console.log("AIAgentRegistry deployed at:", registry);
+        
+        // Deploy Agent with the oracle address
+        agent = address(new AIAgent(
+            oracle,
+            "OpenAI",
+            "gpt-4-turbo"
+        ));
+        console.log("AIAgent deployed at:", agent);
+        
+        // Register the agent in the registry
+        AIAgentRegistry(registry).registerAgent(agent);
+        console.log("Agent registered in registry");
+        
+        // Create an initial test task to verify Oracle is working
+        try AIOracleServiceManager(oracle).createNewTask("Initial Oracle Test Task") {
+            console.log("Created initial test task successfully");
+            uint32 taskNum = AIOracleServiceManager(oracle).latestTaskNum();
+            console.log("Latest task number:", taskNum);
+        } catch Error(string memory reason) {
+            console.log("Failed to create initial task:", reason);
+        }
+    }
+    
+    function logAIOracleAddresses() internal view {
+        console.log("\n========== AI ORACLE DEPLOYMENT INFO ==========");
+        console.log("Network: Unichain Sepolia (", block.chainid, ")");
+        console.log("Oracle Address: ", oracle);
+        console.log("Agent Address: ", agent);
+        console.log("Registry Address: ", registry);
+        
+        // Create a formatted string for easy copying to config.json
+        console.log("\nConfig for eigenlayer-ai-agent/config.json:");
+        console.log("{");
+        console.log("  \"rpc_url\": \"https://sepolia-unichain.infura.io/v3/YOUR_INFURA_KEY\",");
+        console.log("  \"oracle_address\": \"", oracle, "\",");
+        console.log("  \"agent_address\": \"", agent, "\",");
+        console.log("  \"chain_id\": ", block.chainid, ",");
+        console.log("  \"agent_private_key\": \"YOUR_PRIVATE_KEY_HERE\",");
+        console.log("  \"poll_interval_seconds\": 5,");
+        console.log("}");
+        console.log("==============================================\n");
     }
 }
