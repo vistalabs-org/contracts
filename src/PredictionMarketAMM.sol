@@ -132,17 +132,13 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
 
         // Get current reserves
         (uint256 reserve0, uint256 reserve1) = getReserves(key);
-        console.log("reserve0: ", reserve0);
-        console.log("reserve1: ", reserve1);
 
         // Determine if we're swapping in token0 or token1
         bool zeroForOne = params.zeroForOne;
-        console.log("zeroForOne: ", zeroForOne);
-
         uint256 amountIn = params.amountSpecified > 0 ? uint256(params.amountSpecified) : 0;
-        console.log("amountIn: ", amountIn);
-        // Calculate output amount using our custom invariant
-        int256 amountOut = quoter.computeOutputAmount(
+
+        // Calculate output amount and deltas using our custom invariant
+        (int256 inputDelta, int256 outputDelta) = quoter.computeDeltas(
             zeroForOne ? reserve0 : reserve1,  // Input reserve
             zeroForOne ? reserve1 : reserve0,  // Output reserve
             amountIn,
@@ -150,18 +146,15 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             zeroForOne
         );
 
-        console.log("amountOut: ", amountOut);
-
         // Create the BeforeSwapDelta
         BeforeSwapDelta delta;
         if (zeroForOne) {
             // User gives token0, gets token1
-            delta = toBeforeSwapDelta(int128(int256(amountIn)), -int128(amountOut));
+            delta = toBeforeSwapDelta(int128(inputDelta), int128(outputDelta));
         } else {
             // User gives token1, gets token0
-            delta = toBeforeSwapDelta(-int128(amountOut), int128(int256(amountIn)));
+            delta = toBeforeSwapDelta(int128(outputDelta), int128(inputDelta));
         }
-        
 
         return (BaseHook.beforeSwap.selector, delta, 0);
     }

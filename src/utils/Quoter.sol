@@ -13,79 +13,50 @@ contract NormalQuoter {
         console.log("Computing reserve1 from reserve0:", reserve0);
         console.log("Liquidity:", liquidity);
         
-        // For our initial implementation, we want reserve1 to be close to reserve0
-        // Start with a reasonable range
-        uint256 low = 0;
-        uint256 high = reserve0 * 2;
-        uint256 y = reserve0; // Initial guess
+        // Initial guesses for secant method
+        uint256 y0 = reserve0 / 2;  // First guess
+        uint256 y1 = reserve0 * 2;      // Second guess
         
-        // Track the best result so far
-        uint256 bestY = 0;
-        int256 bestResult = type(int256).max;
+        // Calculate function value for first guess
+        int256 f0 = calculateFunction(y0, reserve0, liquidity);
         
-        // Binary search for 64 iterations
-        for (uint256 i = 0; i < 64; i++) {
-            y = (low + high) / 2;
-            
-            // Prevent y from becoming too small
-            if (y < liquidity / 100) {
-                y = liquidity / 100;
-                break;
-            }
-            
-            // Compute left side of equation: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 diff = int256(y) - int256(reserve0);
-            int256 normalized = (diff * 1e18) / int256(liquidity);
-            
-            int256 cdf = Gaussian.cdf(normalized);
-            int256 pdf = Gaussian.pdf(normalized);
-            
-            // Calculate (y-x)Φ((y-x)/L)
-            int256 term1 = (diff * cdf) / 1e18;
-            
-            // Calculate Lφ((y-x)/L)
-            int256 term2 = (int256(liquidity) * pdf) / 1e18;
-            
-            // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 result = term1 + term2 - int256(y);
-            
-            // Log some iterations for debugging
-            if (i == 0 || i == 1 || i == 2 || i == 63) {
-                console.log("Iteration", i);
-                console.log("y:", y);
-                console.log("result:", result);
-            }
-            
-            // Track the best result (closest to zero)
-            if (result < 0) result = -result; // Take absolute value
-            if (result < bestResult) {
-                bestResult = result;
-                bestY = y;
-            }
+        // Secant method iterations
+        for (uint256 i = 0; i < 10; i++) {
+            // Calculate function value for second guess
+            int256 f1 = calculateFunction(y1, reserve0, liquidity);
             
             // Check if we're close enough to a solution
-            if (result < 1e15) { // Small enough threshold
+            if (abs(f1) < 1e12) {
+                console.log("Converged at iteration", i);
                 break;
             }
             
-            // If the high-low range gets too small, stop to prevent converging to zero
-            if (high - low < liquidity / 1000) {
+            // Calculate next guess using secant formula: y2 = y1 - f1 * (y1 - y0) / (f1 - f0)
+            int256 denominator = f1 - f0;
+            if (denominator == 0) {
+                // Avoid division by zero
                 break;
             }
             
-            // Update search range
-            if (term1 + term2 > int256(y)) {
-                high = y;
-            } else {
-                low = y;
+            int256 y2 = int256(y1) - (f1 * (int256(y1) - int256(y0))) / denominator;
+            
+            // Ensure y2 is positive
+            if (y2 <= 0) {
+                y1 = 1;
+                break;
             }
+            
+            // Update values for next iteration
+            y0 = y1;
+            y1 = uint256(y2);
+            f0 = f1;
+            
+            console.log("Iteration", i);
+            console.log("y:", y1);
+            console.log("f:", f1);
         }
         
-        // Use the best result we found
-        console.log("Best y found:", bestY);
-    
-        
-        return bestY;
+        return y1;
     }
     
     
@@ -96,86 +67,69 @@ contract NormalQuoter {
         console.log("Computing reserve0 from reserve1:", reserve1);
         console.log("Liquidity:", liquidity);
         
-        // For our initial implementation, we want reserve0 to be close to reserve1
-        // Start with a reasonable range
-        uint256 low = 0;
-        uint256 high = reserve1 * 2;
-        uint256 x = reserve1; // Initial guess
+        // Initial guesses for secant method. TODO: Make these better
+        uint256 x0 = reserve1 / 2;  // First guess
+        uint256 x1 = reserve1 * 2;      // Second guess
         
-        // Track the best result so far
-        uint256 bestX = reserve1;
-        int256 bestResult = type(int256).max;
+        // Calculate function value for first guess
+        int256 f0 = calculateFunctionReverse(x0, reserve1, liquidity);
         
-        // Binary search for 64 iterations
-        for (uint256 i = 0; i < 64; i++) {
-            x = (low + high) / 2;
-            
-            // Prevent x from becoming too small
-            if (x < liquidity / 100) {
-                x = liquidity / 100;
-                break;
-            }
-            
-            // Compute left side of equation: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 diff = int256(reserve1) - int256(x);
-            int256 normalized = (diff * 1e18) / int256(liquidity);
-            
-            int256 cdf = Gaussian.cdf(normalized);
-            int256 pdf = Gaussian.pdf(normalized);
-            
-            // Calculate (y-x)Φ((y-x)/L)
-            int256 term1 = (diff * cdf) / 1e18;
-            
-            // Calculate Lφ((y-x)/L)
-            int256 term2 = (int256(liquidity) * pdf) / 1e18;
-            
-            // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 result = term1 + term2 - int256(reserve1);
-            
-            // Log some iterations for debugging
-            if (i == 0 || i == 1 || i == 2 || i == 63) {
-                console.log("Iteration", i);
-                console.log("x:", x);
-                console.log("result:", result);
-            }
-            
-            // Track the best result (closest to zero)
-            if (result < 0) result = -result; // Take absolute value
-            if (result < bestResult) {
-                bestResult = result;
-                bestX = x;
-            }
+        // Secant method iterations
+        for (uint256 i = 0; i < 10; i++) {
+            // Calculate function value for second guess
+            int256 f1 = calculateFunctionReverse(x1, reserve1, liquidity);
             
             // Check if we're close enough to a solution
-            if (result < 1e15) { // Small enough threshold
+            if (abs(f1) < 1e12) {
+                console.log("Converged at iteration", i);
                 break;
             }
             
-            // If the high-low range gets too small, stop to prevent converging to zero
-            if (high - low < liquidity / 1000) {
+            // Calculate next guess using secant formula: x2 = x1 - f1 * (x1 - x0) / (f1 - f0)
+            int256 denominator = f1 - f0;
+            if (denominator == 0) {
+                // Avoid division by zero
                 break;
             }
             
-            // Update search range
-            if (term1 + term2 > int256(reserve1)) {
-                low = x;
-            } else {
-                high = x;
+            int256 x2 = int256(x1) - (f1 * (int256(x1) - int256(x0))) / denominator;
+            
+            // Ensure x2 is positive
+            if (x2 <= 0) {
+                x1 = 1;
+                break;
             }
+            
+            // Update values for next iteration
+            x0 = x1;
+            x1 = uint256(x2);
+            f0 = f1;
+            
+            console.log("Iteration", i);
+            console.log("x:", x1);
+            console.log("f:", f1);
         }
         
-        // Use the best result we found
-        console.log("Best x found:", bestX);
-
-        return bestX;
+        return x1;
     }
     
-    // Calculate the output amount for a swap
-    function computeOutputAmount(uint256 inputReserve, uint256 outputReserve, uint256 inputAmount, uint256 liquidity, bool zeroForOne) public view returns (int256) {
-        if (inputAmount == 0) return 0;
+    // Calculate the output amount for a swap and return delta changes in both reserves
+    function computeDeltas(
+        uint256 inputReserve, 
+        uint256 outputReserve, 
+        uint256 inputAmount, 
+        uint256 liquidity, 
+        bool zeroForOne
+    ) public view returns (int256 inputDelta, int256 outputDelta) {
+        if (inputAmount == 0) return (0, 0);
+        
+        console.log("inputReserve:", inputReserve);
+        console.log("outputReserve:", outputReserve);
+        console.log("inputAmount:", inputAmount);
         
         // Calculate new input reserve after swap
         uint256 newInputReserve = inputReserve + inputAmount;
+        console.log("newInputReserve:", newInputReserve);
         
         // Calculate new output reserve based on the invariant
         uint256 newOutputReserve;
@@ -186,14 +140,68 @@ contract NormalQuoter {
             // If swapping token1 for token0, calculate new reserve0 from new reserve1
             newOutputReserve = computeReserve0FromReserve1(newInputReserve, liquidity);
         }
-        
-        // Output amount is the difference in output reserves
-        /*
-        if (newOutputReserve >= outputReserve) {
-            return 0;
-        }*/
-        console.log("outputReserve:", outputReserve);
         console.log("newOutputReserve:", newOutputReserve);
-        return int256(outputReserve) - int256(newOutputReserve);
+        
+        // Calculate deltas
+        inputDelta = int256(inputAmount);
+
+        int256 outputDelta;
+        int256 outputAmount;
+        if (newOutputReserve >= outputReserve) {
+            // If output reserve would increase (which shouldn't happen in a prediction market),
+            // return zero output amount
+            outputAmount = 0;
+            outputDelta = 0;
+        } else {
+            // Normal case: output reserve decreases
+            outputAmount = int256(outputReserve - newOutputReserve);
+            outputDelta = -int256(outputReserve - newOutputReserve);
+        }
+        
+        console.log("inputDelta:", inputDelta);
+        console.log("outputDelta:", outputDelta);
+        
+        return (inputDelta, outputDelta);
+    }
+
+    // Helper function to calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+    function calculateFunction(uint256 y, uint256 x, uint256 liquidity) internal view returns (int256) {
+        int256 diff = int256(y) - int256(x);
+        int256 normalized = (diff * 1e18) / int256(liquidity);
+        
+        int256 cdf = Gaussian.cdf(normalized);
+        int256 pdf = Gaussian.pdf(normalized);
+        
+        // Calculate (y-x)Φ((y-x)/L)
+        int256 term1 = (diff * cdf) / 1e18;
+        
+        // Calculate Lφ((y-x)/L)
+        int256 term2 = (int256(liquidity) * pdf) / 1e18;
+        
+        // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+        return term1 + term2 - int256(y);
+    }
+
+    // Helper function to calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y for reverse case
+    function calculateFunctionReverse(uint256 x, uint256 y, uint256 liquidity) internal view returns (int256) {
+        int256 diff = int256(y) - int256(x);
+        int256 normalized = (diff * 1e18) / int256(liquidity);
+        
+        int256 cdf = Gaussian.cdf(normalized);
+        int256 pdf = Gaussian.pdf(normalized);
+        
+        // Calculate (y-x)Φ((y-x)/L)
+        int256 term1 = (diff * cdf) / 1e18;
+        
+        // Calculate Lφ((y-x)/L)
+        int256 term2 = (int256(liquidity) * pdf) / 1e18;
+        
+        // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+        return term1 + term2 - int256(y);
+    }
+
+    // Calculate absolute value of an int256
+    function abs(int256 x) internal pure returns (int256) {
+        return x >= 0 ? x : -x;
     }
 }
