@@ -17,6 +17,12 @@ A decentralized prediction market built on Uniswap v4 hooks, allowing users to s
 |-------------------|-----------|
 | Test market: "Market resolves to YES if ETH is above 1000" | 0xb485068b7d9e535fcc34930284e564af6c63a9bb08ef352c2aca4a7bae2175f5 |
 
+## Created Markets
+
+| Market ID | Description |
+|-----------|-------------|
+| `0xd7ca1d2e31a6879cef41594eeb5a2644738329559765fe9ddae573d00bdf4ac6` | First test market |
+
 ## How the Prediction Market Works
 
 ### Overview
@@ -124,4 +130,25 @@ For applications with many markets, use pagination:
 const offset = 0;
 const limit = 10;
 const marketBatch = await predictionMarketContract.getMarkets(offset, limit);
+```
+
+## Interacting with Markets
+
+To interact with an existing market, you'll need:
+
+1. The Market ID (shown in the table above)
+2. The PredictionMarketHook contract address
+3. Some USDC tokens (you can get test tokens from the contract owner)
+
+Example commands using cast (Foundry's CLI tool):
+
+```bash
+# Get market details
+cast call 0x351af7D9f5F2BeC762bEb4a5627FF29749458A80 "getMarketById(bytes32)(tuple)" 0xd7ca1d2e31a6879cef41594eeb5a2644738329559765fe9ddae573d00bdf4ac6
+
+# Approve USDC for the hook contract
+cast send 0x2ddB197a62723880D182B64cd4f48425A881Ce23 "approve(address,uint256)" 0x351af7D9f5F2BeC762bEb4a5627FF29749458A80 1000000000 --private-key YOUR_PRIVATE_KEY
+
+# Deposit collateral and get outcome tokens
+# (Implementation depends on your contract's specific functions)
 ```

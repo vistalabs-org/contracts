@@ -54,4 +54,11 @@ interface IPredictionMarketHook {
     /// @param marketId The ID of the market
     /// @return Market struct containing market information
     function getMarketById(bytes32 marketId) external view returns (Market memory);
+
+     /// @notice Gets a paginated list of markets
+    /// @param offset The starting index
+    /// @param limit The maximum number of markets to return
+    /// @return An array of Market structs
+    function getMarkets(uint256 offset, uint256 limit) external view returns (Market[] memory);
+    
 }

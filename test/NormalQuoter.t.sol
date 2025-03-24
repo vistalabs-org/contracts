@@ -51,22 +51,6 @@ contract NormalQuoterTest is Test {
         assertTrue(reserve1after < reserve1, "Reserve1 should decrease when reserve0 increases");
     }
 
-    function test_ZeroInput() public {
-        uint256 reserve0 = INITIAL_RESERVE0;
-        uint256 reserve1 = quoter.computeReserve1FromReserve0(reserve0, LIQUIDITY);
-        
-        (int256 inputDelta, int256 outputDelta) = quoter.computeDeltas(reserve0, reserve1, 0, LIQUIDITY, true);
-        assertTrue(inputDelta == 0, "Zero input should give zero input");
-        assertTrue(outputDelta == 0, "Zero input should give zero output");
-    }
-
-    function test_ZeroLiquidity() public {
-        uint256 reserve0 = 100 * 10**6;
-        uint256 reserve1 = 100 * 10**6;
-        
-        vm.expectRevert(); // Should revert when liquidity is 0
-        quoter.computeDeltas(reserve0, reserve1, 10 * 10**6, 0, true);
-    }
 
 
 }

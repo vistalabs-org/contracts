@@ -113,57 +113,7 @@ contract NormalQuoter {
         return x1;
     }
     
-    // Calculate the output amount for a swap and return delta changes in both reserves
-    function computeDeltas(
-        uint256 inputReserve, 
-        uint256 outputReserve, 
-        uint256 inputAmount, 
-        uint256 liquidity, 
-        bool zeroForOne
-    ) public view returns (int256 inputDelta, int256 outputDelta) {
-        if (inputAmount == 0) return (0, 0);
-        
-        console.log("inputReserve:", inputReserve);
-        console.log("outputReserve:", outputReserve);
-        console.log("inputAmount:", inputAmount);
-        
-        // Calculate new input reserve after swap
-        uint256 newInputReserve = inputReserve + inputAmount;
-        console.log("newInputReserve:", newInputReserve);
-        
-        // Calculate new output reserve based on the invariant
-        uint256 newOutputReserve;
-        if (zeroForOne) {
-            // If swapping token0 for token1, calculate new reserve1 from new reserve0
-            newOutputReserve = computeReserve1FromReserve0(newInputReserve, liquidity);
-        } else {
-            // If swapping token1 for token0, calculate new reserve0 from new reserve1
-            newOutputReserve = computeReserve0FromReserve1(newInputReserve, liquidity);
-        }
-        console.log("newOutputReserve:", newOutputReserve);
-        
-        // Calculate deltas
-        inputDelta = int256(inputAmount);
-
-        int256 outputDelta;
-        int256 outputAmount;
-        if (newOutputReserve >= outputReserve) {
-            // If output reserve would increase (which shouldn't happen in a prediction market),
-            // return zero output amount
-            outputAmount = 0;
-            outputDelta = 0;
-        } else {
-            // Normal case: output reserve decreases
-            outputAmount = int256(outputReserve - newOutputReserve);
-            outputDelta = -int256(outputReserve - newOutputReserve);
-        }
-        
-        console.log("inputDelta:", inputDelta);
-        console.log("outputDelta:", outputDelta);
-        
-        return (inputDelta, outputDelta);
-    }
-
+  
     // Helper function to calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
     function calculateFunction(uint256 y, uint256 x, uint256 liquidity) internal view returns (int256) {
         int256 diff = int256(y) - int256(x);

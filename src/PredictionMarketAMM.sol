@@ -471,6 +471,10 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         market.noToken.mint(msg.sender, tokenAmount);
     }
 
+    function executeSwapWithCollateral(bytes32 marketId, uint256 collateralAmount) external {
+        Market memory market = _markets[marketId];
+    }
+
     // Helper function to get current reserves
     function _getReserves(PoolKey calldata key) internal view returns (uint256 reserve0, uint256 reserve1) {
         // Get balances using CurrencyLibrary's balanceOf function
@@ -478,18 +482,6 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         reserve1 = CurrencyLibrary.balanceOf(key.currency1, address(poolManager));
     }
 
-    function _computeDeltas(PoolKey calldata key, IPoolManager.SwapParams calldata params) internal view returns (int256 inputDelta, int256 outputDelta) {
-        (uint256 reserve0, uint256 reserve1) = _getReserves(key);
-        // Calculate deltas using our custom invariant
-        (int256 inputDelta, int256 outputDelta) = quoter.computeDeltas(
-            params.zeroForOne ? reserve0 : reserve1,  // Input reserve
-            params.zeroForOne ? reserve1 : reserve0,  // Output reserve
-            uint256(params.amountSpecified),
-            LIQUIDITY,
-            params.zeroForOne
-        );
-        return (inputDelta, outputDelta);
-    }
 
     // Public wrapper for testing
     function getReserves(PoolKey calldata key) public view returns (uint256 reserve0, uint256 reserve1) {
@@ -555,4 +547,18 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         
         return amountUnspecified;
     }
+
+    // Calculate time remaining in seconds
+    function getTimeRemainingSqrt(bytes32 marketId) public view returns (uint256) {
+        Market memory market = _markets[marketId];
+        
+        // If the market has already ended, return 0
+        if (block.timestamp >= market.endTimestamp) {
+            return 0;
+        }
+        
+        // Return the difference between end time and current time
+        return FixedPointMathLib.sqrt(market.endTimestamp - block.timestamp);
+    }
+
 }

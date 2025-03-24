@@ -180,18 +180,24 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Transfer collateral to this contract
         IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
 
-        // Create pool keys
+        // Determine token order based on addresses
+        bool collateralIsToken0 = params.collateralAddress < address(yesToken);
+
+        // Create YES pool key
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
-            currency1: Currency.wrap(address(yesToken)),
+            currency0: Currency.wrap(collateralIsToken0 ? params.collateralAddress : address(yesToken)),
+            currency1: Currency.wrap(collateralIsToken0 ? address(yesToken) : params.collateralAddress),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
 
+        bool collateralIsToken0No = params.collateralAddress < address(noToken);
+
+        // Create NO pool key
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(params.collateralAddress),
-            currency1: Currency.wrap(address(noToken)),
+            currency0: Currency.wrap(collateralIsToken0No ? params.collateralAddress : address(noToken)),
+            currency1: Currency.wrap(collateralIsToken0No ? address(noToken) : params.collateralAddress),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
