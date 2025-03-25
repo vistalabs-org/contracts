@@ -452,7 +452,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
 
     // mint YES / NO tokens based on collateral amount
     // Users can mint based on current price to provide liquidity to the market
-    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) external {
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) public {
         Market memory market = _markets[marketId];
         
         // Calculate collateral to return (accounting for decimal differences)
@@ -471,9 +471,25 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         market.noToken.mint(msg.sender, tokenAmount);
     }
 
-    function executeSwapWithCollateral(bytes32 marketId, uint256 collateralAmount) external {
+    /**
+    * @notice needs offchain logic to have the correct amount of collateral to mint
+    * @param marketId The ID of the market
+    * @param params The swap parameters for the trade
+    */
+    function mintCollateralAndTrade(
+        bytes32 marketId,
+        IPoolManager.SwapParams calldata params,
+        uint256 collateralAmount
+    ) external {
         Market memory market = _markets[marketId];
+
+        // mint collateral
+        mintOutcomeTokens(marketId, collateralAmount);
+
+        // trade
+        poolManager.swap(market.yesPoolKey, params, "");
     }
+    
 
     // Helper function to get current reserves
     function _getReserves(PoolKey calldata key) internal view returns (uint256 reserve0, uint256 reserve1) {
