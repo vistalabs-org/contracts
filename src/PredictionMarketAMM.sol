@@ -59,7 +59,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     mapping(bytes32 => uint256) private _claimedTokens;
 
     // Map pool IDs to market IDs
-    mapping(PoolId => bytes32) private _poolToMarketId;
+    mapping(PoolId => bytes32) public _poolToMarketId;
 
     // Array to store all market IDs
     bytes32[] private _allMarketIds;
@@ -264,7 +264,8 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             collateralAddress: params.collateralAddress,
             title: params.title,
             description: params.description,
-            endTimestamp: block.timestamp + params.duration
+            endTimestamp: block.timestamp + params.duration,
+            curveId: params.curveId
         });
 
         // Add market ID to the array of all markets
@@ -509,6 +510,12 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params
     ) public view returns (uint256 amountUnspecified) {
+        bytes32 marketId = _poolToMarketId[key.toId()];
+        Market memory market = _markets[marketId];
+        // checking if the market has a dynamic scaling factor
+        uint256 scaling = market.curveId == 1 ? 1e18 : getTimeRemainingSqrt(marketId);
+        console.log("scaling", scaling);
+        
         // Get current reserves
         (uint256 reserve0, uint256 reserve1) = getReserves(key);
         
@@ -530,10 +537,10 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             uint256 newOutputReserve;
             if (params.zeroForOne) {
                 // If swapping token0 for token1, calculate new reserve1 from new reserve0
-                newOutputReserve = quoter.computeReserve1FromReserve0(newInputReserve, LIQUIDITY);
+                newOutputReserve = quoter.computeReserve1FromReserve0(newInputReserve, LIQUIDITY, scaling);
             } else {
                 // If swapping token1 for token0, calculate new reserve0 from new reserve1
-                newOutputReserve = quoter.computeReserve0FromReserve1(newInputReserve, LIQUIDITY);
+                newOutputReserve = quoter.computeReserve0FromReserve1(newInputReserve, LIQUIDITY, scaling);
             }
             
             // The unspecified amount is the output amount
@@ -549,10 +556,10 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             uint256 newInputReserve;
             if (params.zeroForOne) {
                 // If swapping token0 for token1, calculate new reserve0 from new reserve1
-                newInputReserve = quoter.computeReserve0FromReserve1(newOutputReserve, LIQUIDITY);
+                newInputReserve = quoter.computeReserve0FromReserve1(newOutputReserve, LIQUIDITY, scaling);
             } else {
                 // If swapping token1 for token0, calculate new reserve1 from new reserve0
-                newInputReserve = quoter.computeReserve1FromReserve0(newOutputReserve, LIQUIDITY);
+                newInputReserve = quoter.computeReserve1FromReserve0(newOutputReserve, LIQUIDITY, scaling);
             }
             
             // The input amount is the difference between the new and current input reserves
@@ -567,14 +574,13 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     // Calculate time remaining in seconds
     function getTimeRemainingSqrt(bytes32 marketId) public view returns (uint256) {
         Market memory market = _markets[marketId];
-        
-        // If the market has already ended, return 0
         if (block.timestamp >= market.endTimestamp) {
             return 0;
         }
-        
-        // Return the difference between end time and current time
-        return FixedPointMathLib.sqrt(market.endTimestamp - block.timestamp);
+        // Keep T-t in seconds but scale up before taking sqrt
+        uint256 timeRemaining = market.endTimestamp - block.timestamp;
+        // Scale up by 1e18 before sqrt to get a larger number
+        return FixedPointMathLib.sqrt(timeRemaining * 1e18) * 1e9;
     }
 
 }

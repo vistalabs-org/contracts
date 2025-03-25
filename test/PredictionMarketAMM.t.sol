@@ -65,6 +65,32 @@ contract PredictionMarketHookTest is Test, Deployers {
         _;
     }
 
+    modifier withMarketAndLiquidityDynamic() {
+        // Create market
+        bytes32 marketId = createTestMarketDynamic();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Mint outcome tokens
+        uint256 mintAmount = 1000 * 10**6; // 1000 USDC
+        collateralToken.approve(address(hook), type(uint256).max);
+        hook.mintOutcomeTokens(marketId, mintAmount);
+        
+        // Add liquidity to the pool
+        uint256 liquidityAmount = 399 * 10**18; // 399 YES tokens
+        OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
+        OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
+        hook.addLiquidity(market.yesPoolKey, liquidityAmount);
+        
+        // Approve tokens for swapping
+        OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
+        OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
+        collateralToken.approve(address(poolSwapTest), type(uint256).max);
+        
+        // Store market in a storage variable for tests to access
+        testMarket = market;
+        _;
+    }
+
     // Storage variable to hold the market for tests
     Market private testMarket;
 
@@ -131,7 +157,24 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 1
+        });
+
+        return hook.createMarketAndDepositCollateral(params);
+    }
+
+        // Remove the modifier and make it a helper function instead
+    function createTestMarketDynamic() public returns (bytes32) {
+        CreateMarketParams memory params = CreateMarketParams({
+            oracle: address(this),
+            creator: address(this),
+            collateralAddress: address(collateralToken),
+            collateralAmount: COLLATERAL_AMOUNT,
+            title: "Will ETH reach $10k in 2024?",
+            description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
+            duration: 30 days,
+            curveId: 2
         });
 
         return hook.createMarketAndDepositCollateral(params);
@@ -372,4 +415,89 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertEq(reserve0, 10 * 1e6, "Incorrect reserve0");
         assertEq(reserve1, 10 * 1e6, "Incorrect reserve1");
     }
+
+    function test_getTimeRemainingSqrt() public withMarketAndLiquidityDynamic {
+        bytes32 marketId = hook._poolToMarketId(testMarket.yesPoolKey.toId());
+        uint256 timeRemaining = hook.getTimeRemainingSqrt(marketId);
+        console.log("Time remaining:", timeRemaining);
+        // simulate time passing
+        vm.warp(block.timestamp + 10 days);
+        uint256 timeRemainingAfter = hook.getTimeRemainingSqrt(marketId);
+        console.log("Time remaining after:", timeRemainingAfter);
+        assertTrue(timeRemainingAfter < timeRemaining, "Time remaining should decrease");
+    }
+
+    function test_dailySwaps_30days() public withMarketAndLiquidityDynamic {
+        // Get the market ID from the pool key
+        bytes32 marketId = hook._poolToMarketId(testMarket.yesPoolKey.toId());
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Record initial state
+        console.log("\nInitial state:");
+        (uint256 initialReserve0, uint256 initialReserve1) = hook.getReserves(testMarket.yesPoolKey);
+        console.log("Day 0 - Reserve0:", initialReserve0);
+        console.log("Day 0 - Reserve1:", initialReserve1);
+        console.log("Day 0 - Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
+
+        // Prepare swap parameters
+        uint256 swapAmount = 1e18; // 1 token
+        
+        // Perform a swap each day for 30 days
+        for (uint256 day = 1; day <= 28; day++) {
+            console.log("Day", day);
+            // Move time forward by 1 day
+            vm.warp(block.timestamp + 1 days);
+            
+            // Alternate between buying and selling
+            bool zeroForOne = day % 2 == 0;
+            
+            // Get reserves before swap
+            (uint256 reserve0Before, uint256 reserve1Before) = hook.getReserves(testMarket.yesPoolKey);
+            
+            // Perform swap
+            BalanceDelta delta = poolSwapTest.swap(
+                testMarket.yesPoolKey,
+                IPoolManager.SwapParams({
+                    zeroForOne: zeroForOne,
+                    amountSpecified: int256(swapAmount),
+                    sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                }),
+                PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+                ""
+            );
+            
+            // Get reserves after swap
+            (uint256 reserve0After, uint256 reserve1After) = hook.getReserves(testMarket.yesPoolKey);
+            
+            // Log the daily state
+            console.log("\nDay", day, "results:");
+            console.log("Swap direction:", zeroForOne ? "0 -> 1" : "1 -> 0");
+            console.log("Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
+            console.log("Reserve0 change:", reserve0After > reserve0Before ? 
+                reserve0After - reserve0Before : 
+                reserve0Before - reserve0After
+            );
+            console.log("Reserve1 change:", reserve1After > reserve1Before ? 
+                reserve1After - reserve1Before : 
+                reserve1Before - reserve1After
+            );
+            console.log("Delta amount0:", uint256(int256(delta.amount0())));
+            console.log("Delta amount1:", uint256(int256(delta.amount1())));
+            
+            // Verify the swap had an impact
+            assertTrue(
+                reserve0After != reserve0Before || reserve1After != reserve1Before,
+                "Swap should change reserves"
+            );
+            
+        }
+        
+        // Final state
+        (uint256 finalReserve0, uint256 finalReserve1) = hook.getReserves(testMarket.yesPoolKey);
+        console.log("\nFinal state:");
+        console.log("Final Reserve0:", finalReserve0);
+        console.log("Final Reserve1:", finalReserve1);
+        console.log("Final Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
+    }
+
 }

@@ -224,7 +224,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             collateralAddress: params.collateralAddress,
             title: params.title,
             description: params.description,
-            endTimestamp: block.timestamp + params.duration
+            endTimestamp: block.timestamp + params.duration,
+            curveId: params.curveId
         });
 
         // Add market ID to the array of all markets

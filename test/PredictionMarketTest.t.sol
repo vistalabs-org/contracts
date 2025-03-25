@@ -88,7 +88,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
 
         marketId = hook.createMarketAndDepositCollateral(params);
@@ -105,7 +106,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
 
         marketId = hook.createMarketAndDepositCollateral(params);
@@ -228,7 +230,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
 
         return hook.createMarketAndDepositCollateral(params);

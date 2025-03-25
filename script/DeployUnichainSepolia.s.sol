@@ -80,7 +80,8 @@ contract DeployPredictionMarket is Script {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Test market",
             description: "Market resolves to YES if ETH is above 1000",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
 
         bytes32 marketId = hook.createMarketAndDepositCollateral(params);
