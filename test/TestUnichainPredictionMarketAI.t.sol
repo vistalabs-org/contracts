@@ -10,7 +10,7 @@ import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
-import {ERC20Mock} from "./utils/ERC20mock.sol";
+import {ERC20Mock} from "./utils/ERC20Mock.sol";
 import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
 import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
 import {AIAgent} from "../src/oracle/AIAgent.sol";
@@ -351,7 +351,8 @@ contract TestUnichainPredictionMarketAI is Test {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH exceed $5000 in 2024?",
             description: "Market resolves to YES if the price of ETH exceeds $5000 at any point before December 31, 2024",
-            duration: 180 days
+            duration: 180 days,
+            curveId: 0  // Add the missing curveId parameter
         });
         
         // Create the market

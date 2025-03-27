@@ -11,8 +11,8 @@ enum MarketState {
 }
 
 struct Market {
-    PoolKey yesPoolKey;  // Pool key for collateral-YES pair
-    PoolKey noPoolKey;   // Pool key for collateral-NO pair
+    PoolKey yesPoolKey; // Pool key for collateral-YES pair
+    PoolKey noPoolKey; // Pool key for collateral-NO pair
     address oracle;
     address creator;
     OutcomeToken yesToken;
@@ -21,9 +21,10 @@ struct Market {
     bool outcome;
     uint256 totalCollateral;
     address collateralAddress;
-    string title;        // Market title
-    string description;   // Market description
+    string title; // Market title
+    string description; // Market description
     uint256 endTimestamp; // Market end time
+    uint256 curveId; 
 }
 
 struct CreateMarketParams {
@@ -34,4 +35,5 @@ struct CreateMarketParams {
     string title;
     string description;
     uint256 duration;
+    uint256 curveId;
 }

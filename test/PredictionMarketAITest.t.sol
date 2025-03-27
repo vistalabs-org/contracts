@@ -26,7 +26,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Market, MarketState, CreateMarketParams} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
-import {ERC20Mock} from "./utils/ERC20mock.sol";
+import {ERC20Mock} from "./utils/ERC20Mock.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -267,7 +267,8 @@ contract PredictionMarketAITest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will AI replace developers by 2030?",
             description: "Market resolves to YES if AI systems can autonomously create complete production applications by 2030",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
         
         try hook.createMarketAndDepositCollateral(params) returns (bytes32 id) {

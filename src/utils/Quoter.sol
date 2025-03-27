@@ -1,127 +1,162 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "./Stats.sol";
+import {Gaussian} from "lib/solstat/src/Gaussian.sol";
+import "forge-std/console.sol";
 
 contract NormalQuoter {
-    uint256 constant SCALE = 10**18;
-    NormalDistribution public normalDist;
-
-    constructor() {
-        normalDist = new NormalDistribution();
-    }
-
-    // Given input amount x and liquidity L, compute output amount y
-    function computeOutputAmount(
-        uint256 inputAmount,
-        uint256 liquidity
-    ) public view returns (uint256) {
+    // Given reserve0 (x) and liquidity L, compute reserve1 (y)
+    // Solves: (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y = 0 for y
+    function computeReserve1FromReserve0(uint256 reserve0, uint256 liquidity, uint256 scaling) public view returns (uint256) {
         require(liquidity > 0, "Invalid liquidity");
-        if (inputAmount == 0) return 0;
         
-        // We need to solve (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y = 0
-        // Using binary search since the equation is monotonic
+        console.log("Computing reserve1 from reserve0:", reserve0);
+        console.log("Liquidity:", liquidity);
         
-        uint256 low = 0;
-        uint256 high = inputAmount; // Upper bound should be input amount (can't get more out than in)
-        uint256 y;
+        // Initial guesses for secant method
+        uint256 y0 = reserve0 / 2;  // First guess
+        uint256 y1 = reserve0 * 2;      // Second guess
         
-        // Binary search for 64 iterations
-        for (uint256 i = 0; i < 64; i++) {
-            y = (low + high) / 2;
-            
-            console.log("computing cdf");
-            // Compute f(y) = (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
-            int256 diff = int256(y) - int256(inputAmount);
-            int256 normalized = (diff * int256(SCALE)) / int256(liquidity);
-            
-            uint256 cdf = normalDist.normalCDF(normalized);
-            
-            console.log("computing pdf");
-            uint256 pdf = normalDist.normalPDF(normalized);
-            
-            // Handle negative diff properly
-            uint256 term1;
-            if (diff < 0) {
-                // If diff is negative, we need to subtract
-                term1 = (uint256(-diff) * cdf) / SCALE;
-                if (term1 > y) {
-                    // If term1 > y, we'd get an underflow, so set high = y
-                    high = y;
-                    continue;
-                }
-                term1 = y - term1;
-            } else {
-                // If diff is positive or zero
-                term1 = (uint256(diff) * cdf) / SCALE;
-            }
-            
-            uint256 term2 = (liquidity * pdf) / SCALE;
-            
-            // Check if term1 + term2 > y, being careful about overflow
-            if (term1 > y || term2 > type(uint256).max - term1 || term1 + term2 > y) {
-                low = y;
-            } else {
-                high = y;
-            }
-        }
+        // Calculate function value for first guess
+        int256 f0 = calculateFunction(y0, reserve0, liquidity, scaling);
         
-        // Ensure output is less than input due to slippage
-        return y < inputAmount ? y : inputAmount - 1;
-    }
-
-    // Given desired output amount y and liquidity L, compute required input amount x
-    function computeInputAmount(
-        uint256 outputAmount,
-        uint256 liquidity
-    ) public view returns (uint256) {
-        require(liquidity > 0, "Invalid liquidity");
-        if (outputAmount == 0) return 0;
-        
-        // For input amount, we need to ensure it's greater than output amount
-        uint256 low = outputAmount; // Input must be at least equal to output
-        uint256 high = outputAmount * 2; // Initial upper bound
-        uint256 x = outputAmount; // Default to equal (no slippage case)
-        
-        // Binary search for 64 iterations
-        for (uint256 i = 0; i < 64; i++) {
-            x = (low + high) / 2;
+        // Secant method iterations
+        for (uint256 i = 0; i < 10; i++) {
+            // Calculate function value for second guess
+            int256 f1 = calculateFunction(y1, reserve0, liquidity, scaling);
             
-            // Compute output for this input
-            uint256 y = computeOutputAmount(x, liquidity);
-            
-            // If output is too small, decrease input (move high down)
-            // If output is too large, increase input (move low up)
-            if (y < outputAmount) {
-                low = x;
-            } else if (y > outputAmount) {
-                high = x;
-            } else {
-                // Exact match found
+            // Check if we're close enough to a solution
+            if (abs(f1) < 1e12) {
+                console.log("Converged at iteration", i);
                 break;
             }
+            
+            // Calculate next guess using secant formula: y2 = y1 - f1 * (y1 - y0) / (f1 - f0)
+            int256 denominator = f1 - f0;
+            if (denominator == 0) {
+                // Avoid division by zero
+                break;
+            }
+            
+            int256 y2 = int256(y1) - (f1 * (int256(y1) - int256(y0))) / denominator;
+            
+            // Ensure y2 is positive
+            if (y2 <= 0) {
+                y1 = 1;
+                break;
+            }
+            
+            // Update values for next iteration
+            y0 = y1;
+            y1 = uint256(y2);
+            f0 = f1;
+            
+            console.log("Iteration", i);
+            console.log("y:", y1);
+            console.log("f:", f1);
         }
         
-        // Ensure input is greater than output (due to slippage)
-        return x > outputAmount ? x : outputAmount + 1;
+        return y1;
+    }
+    
+    
+    // Given reserve1 (y) and liquidity L, compute reserve0 (x)
+    function computeReserve0FromReserve1(uint256 reserve1, uint256 liquidity, uint256 scaling) public view returns (uint256) {
+        require(liquidity > 0, "Invalid liquidity");
+        
+        console.log("Computing reserve0 from reserve1:", reserve1);
+        console.log("Liquidity:", liquidity);
+        
+        // Initial guesses for secant method. TODO: Make these better
+        uint256 x0 = reserve1 / 2;  // First guess
+        uint256 x1 = reserve1 * 2;      // Second guess
+
+        // Calculate function value for first guess
+        int256 f0 = calculateFunctionReverse(x0, reserve1, liquidity, scaling);
+        
+        // Secant method iterations
+        for (uint256 i = 0; i < 10; i++) {
+            // Calculate function value for second guess
+            int256 f1 = calculateFunctionReverse(x1, reserve1, liquidity, scaling);
+            
+            // Check if we're close enough to a solution
+            if (abs(f1) < 1e12) {
+                console.log("Converged at iteration", i);
+                break;
+            }
+            
+            // Calculate next guess using secant formula: x2 = x1 - f1 * (x1 - x0) / (f1 - f0)
+            int256 denominator = f1 - f0;
+            if (denominator == 0) {
+                // Avoid division by zero
+                break;
+            }
+            
+            int256 x2 = int256(x1) - (f1 * (int256(x1) - int256(x0))) / denominator;
+            
+            // Ensure x2 is positive
+            if (x2 <= 0) {
+                x1 = 1;
+                break;
+            }
+            
+            // Update values for next iteration
+            x0 = x1;
+            x1 = uint256(x2);
+            f0 = f1;
+            
+            console.log("Iteration", i);
+            console.log("x:", x1);
+            console.log("f:", f1);
+        }
+        
+        return x1;
+    }
+    
+  
+    // Helper function to calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+    function calculateFunction(uint256 y, uint256 x, uint256 liquidity, uint256 scaling) internal view returns (int256) {
+        int256 diff = int256(y) - int256(x);
+        // scaled liquidity
+        int256 scaledLiquidity = int256(liquidity) * int256(scaling) / 1e18;
+
+        int256 normalized = (diff * 1e18) / scaledLiquidity;
+        
+        int256 cdf = Gaussian.cdf(normalized);
+        int256 pdf = Gaussian.pdf(normalized);
+        
+        // Calculate (y-x)Φ((y-x)/L)
+        int256 term1 = (diff * cdf) / 1e18;
+        
+        // Calculate Lφ((y-x)/L)
+        int256 term2 = (scaledLiquidity * pdf) / 1e18;
+        
+        // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+        return term1 + term2 - int256(y);
     }
 
-    // Compute price impact as a percentage (scaled by SCALE)
-    function computePriceImpact(
-        uint256 inputAmount,
-        uint256 outputAmount,
-        uint256 liquidity
-    ) public pure returns (uint256) {
-        require(inputAmount > 0, "Invalid input amount");
+    // Helper function to calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y for reverse case
+    function calculateFunctionReverse(uint256 x, uint256 y, uint256 liquidity, uint256 scaling) internal view returns (int256) {
+        int256 diff = int256(y) - int256(x);
+        int256 scaledLiquidity = int256(liquidity) * int256(scaling) / 1e18;
+        int256 normalized = (diff * 1e18) / scaledLiquidity;
         
-        // Price impact = |1 - (dy/dx)|
-        uint256 spotPrice = SCALE; // Assuming 1:1 spot price
-        uint256 executionPrice = (outputAmount * SCALE) / inputAmount;
+        int256 cdf = Gaussian.cdf(normalized);
+        int256 pdf = Gaussian.pdf(normalized);
         
-        if (executionPrice > spotPrice) {
-            return ((executionPrice - spotPrice) * SCALE) / spotPrice;
-        } else {
-            return ((spotPrice - executionPrice) * SCALE) / spotPrice;
-        }
+        // Calculate (y-x)Φ((y-x)/L)
+        int256 term1 = (diff * cdf) / 1e18;
+        
+        // Calculate Lφ((y-x)/L)
+        int256 term2 = (scaledLiquidity * pdf) / 1e18;
+        
+        // Calculate (y-x)Φ((y-x)/L) + Lφ((y-x)/L) - y
+        return term1 + term2 - int256(y);
     }
+
+    // Calculate absolute value of an int256
+    function abs(int256 x) internal pure returns (int256) {
+        return x >= 0 ? x : -x;
+    }
+
 }

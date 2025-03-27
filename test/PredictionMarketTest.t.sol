@@ -19,7 +19,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Market, MarketState, CreateMarketParams} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
-import {ERC20Mock} from "./utils/ERC20mock.sol";
+import {ERC20Mock} from "./utils/ERC20Mock.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,7 +28,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
-    
+
     PredictionMarketHook public hook;
     PoolCreationHelper public poolCreationHelper;
     ERC20Mock public collateralToken;
@@ -43,30 +43,27 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Deploy PoolSwapTest
         poolSwapTest = new PoolSwapTest(manager);
-        
+
         // Deploy PoolModifyLiquidityTest
         poolModifyLiquidityTest = new PoolModifyLiquidityTest(manager);
 
         // Deploy PoolCreationHelper
         poolCreationHelper = new PoolCreationHelper(address(manager));
         console.log("PoolCreationHelper deployed at:", address(poolCreationHelper));
-        
+
         // Calculate hook address with specific flags for swap and liquidity operations
         address flags = address(
-            uint160(
-                Hooks.BEFORE_SWAP_FLAG | 
-                Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | 
-                Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)
+                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
 
         // Deploy the hook using foundry cheatcode with specific flags
         deployCodeTo(
-            "PredictionMarketHook.sol:PredictionMarketHook", 
-            abi.encode(manager, poolModifyLiquidityTest, poolCreationHelper), 
+            "PredictionMarketHook.sol:PredictionMarketHook",
+            abi.encode(manager, poolModifyLiquidityTest, poolCreationHelper),
             flags
         );
-        
+
         // Initialize hook instance at the deployed address
         hook = PredictionMarketHook(flags);
         console.log("Hook address:", address(hook));
@@ -74,9 +71,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         // create and mint a collateral token
         // Deploy mock token
         collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
-        
+
         // Mint some tokens for testing
-        collateralToken.mint(address(this), 1000000 * 10**6);
+        collateralToken.mint(address(this), 1000000 * 10 ** 6);
 
         // approve the hook to transfer the tokens
         collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
@@ -91,9 +88,10 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
-        
+
         marketId = hook.createMarketAndDepositCollateral(params);
         _;
     }
@@ -108,40 +106,41 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
-        
+
         marketId = hook.createMarketAndDepositCollateral(params);
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Get token references
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
-        
+
         // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
         int24 minTick = -9200; // ~0.01 USDC
-        int24 maxTick = -100;  // ~0.99 USDC
+        int24 maxTick = -100; // ~0.99 USDC
         int24 initialTick = -6900; // ~0.5 USDC
-        
+
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;
         maxTick = (maxTick / tickSpacing) * tickSpacing;
-        
+
         // Get the sqrtPriceX96 for the initial tick (0.5 USDC)
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
-        
+
         // Prepare liquidity amounts
-        uint256 liquidityCollateral = 50 * 1e6;  // 50 USDC
-        uint256 liquidityOutcomeTokens = 100 * 1e18;  // 100 outcome tokens
-        
+        uint256 liquidityCollateral = 50 * 1e6; // 50 USDC
+        uint256 liquidityOutcomeTokens = 100 * 1e18; // 100 outcome tokens
+
         // Approve tokens for liquidity provision
         collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
         yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
         noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
-        
+
         // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
@@ -150,7 +149,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             liquidityCollateral,
             liquidityOutcomeTokens
         );
-        
+
         // Add liquidity to YES pool
         poolModifyLiquidityTest.modifyLiquidity(
             market.yesPoolKey,
@@ -162,7 +161,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             }),
             new bytes(0)
         );
-        
+
         // Add liquidity to NO pool
         poolModifyLiquidityTest.modifyLiquidity(
             market.noPoolKey,
@@ -174,17 +173,17 @@ contract PredictionMarketHookTest is Test, Deployers {
             }),
             new bytes(0)
         );
-        
+
         _;
     }
 
     function test_createMarketandDepositCollateral() public {
         // Create a market and get its ID
         bytes32 marketId = createTestMarket();
-        
+
         // Verify market was created successfully
         assertTrue(marketId != bytes32(0), "Market ID should not be zero");
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
 
@@ -200,29 +199,25 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertTrue(address(market.yesToken) != address(0), "YES token not created");
         assertTrue(address(market.noToken) != address(0), "NO token not created");
     }
-    
+
     function test_createMarketAndAddLiquidity() public {
         // Create a market with liquidity and get its ID
         bytes32 marketId = createTestMarketWithLiquidity();
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Verify creator received outcome tokens
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
-        
+
         // Verify tokens were transferred for liquidity
         assertLt(
-            yesToken.balanceOf(address(this)), 
-            COLLATERAL_AMOUNT, 
-            "Creator should have spent YES tokens on liquidity"
+            yesToken.balanceOf(address(this)), COLLATERAL_AMOUNT, "Creator should have spent YES tokens on liquidity"
         );
-        
+
         assertLt(
-            noToken.balanceOf(address(this)), 
-            COLLATERAL_AMOUNT, 
-            "Creator should have spent NO tokens on liquidity"
+            noToken.balanceOf(address(this)), COLLATERAL_AMOUNT, "Creator should have spent NO tokens on liquidity"
         );
     }
 
@@ -235,9 +230,10 @@ contract PredictionMarketHookTest is Test, Deployers {
             collateralAmount: COLLATERAL_AMOUNT,
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
-            duration: 30 days
+            duration: 30 days,
+            curveId: 0
         });
-        
+
         return hook.createMarketAndDepositCollateral(params);
     }
 
@@ -245,36 +241,36 @@ contract PredictionMarketHookTest is Test, Deployers {
     function createTestMarketWithLiquidity() internal returns (bytes32) {
         // Create market first
         bytes32 marketId = createTestMarket();
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Get token references
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
-        
+
         // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
         int24 minTick = -9200; // ~0.01 USDC
-        int24 maxTick = -100;  // ~0.99 USDC
+        int24 maxTick = -100; // ~0.99 USDC
         int24 initialTick = -6900; // ~0.5 USDC
-        
+
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;
         maxTick = (maxTick / tickSpacing) * tickSpacing;
-        
+
         // Get the sqrtPriceX96 for the initial tick (0.5 USDC)
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
-        
+
         // Prepare liquidity amounts
-        uint256 liquidityCollateral = 50 * 1e6;  // 50 USDC
-        uint256 liquidityOutcomeTokens = 100 * 1e18;  // 100 outcome tokens
-        
+        uint256 liquidityCollateral = 50 * 1e6; // 50 USDC
+        uint256 liquidityOutcomeTokens = 100 * 1e18; // 100 outcome tokens
+
         // Approve tokens for liquidity provision
         collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
         yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
         noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
-        
+
         // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
@@ -283,7 +279,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             liquidityCollateral,
             liquidityOutcomeTokens
         );
-        
+
         // Add liquidity to YES pool
         poolModifyLiquidityTest.modifyLiquidity(
             market.yesPoolKey,
@@ -295,7 +291,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             }),
             new bytes(0)
         );
-        
+
         // Add liquidity to NO pool
         poolModifyLiquidityTest.modifyLiquidity(
             market.noPoolKey,
@@ -307,44 +303,44 @@ contract PredictionMarketHookTest is Test, Deployers {
             }),
             new bytes(0)
         );
-        
+
         return marketId;
     }
 
     function test_buyYesSharesFromPool() public {
         // Create a market with liquidity
         bytes32 marketId = createTestMarketWithLiquidity();
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-        
+
         // Create a user who will buy YES tokens
         address user = makeAddr("user");
-        
+
         // Give user some collateral tokens
         collateralToken.mint(user, 10 * 1e6); // 10 USDC
-        
+
         // User transfers collateral to the test contract (which will perform the swap)
         vm.prank(user);
         collateralToken.transfer(address(this), 6 * 1e6); // Transfer 6 USDC to cover potential slippage
-        
+
         // Record balances before swap
         uint256 userCollateralBefore = collateralToken.balanceOf(user);
         uint256 userYesTokensBefore = yesToken.balanceOf(user);
         uint256 testContractYesTokensBefore = yesToken.balanceOf(address(this));
-        
+
         console.log("User collateral before swap:", userCollateralBefore);
         console.log("User YES tokens before swap:", userYesTokensBefore);
-        
+
         // Approve the pool manager to use the test contract's tokens with a buffer for slippage
         collateralToken.approve(address(poolSwapTest), 6 * 1e6);
-        
+
         // In our pool setup, token0 is collateral and token1 is YES token
         bool zeroForOne = true; // Swapping collateral (token0) for YES tokens (token1)
         int256 amountSpecified = 5 * 1e6; // Swap 5 USDC
         uint160 sqrtPriceLimitX96 = 4295128739 + 1; // Minimum valid sqrtPriceX96 + 1
-        
+
         // Execute the swap using PoolSwapTest which handles the callbacks
         poolSwapTest.swap(
             market.yesPoolKey,
@@ -353,59 +349,54 @@ contract PredictionMarketHookTest is Test, Deployers {
                 amountSpecified: amountSpecified,
                 sqrtPriceLimitX96: sqrtPriceLimitX96
             }),
-            PoolSwapTest.TestSettings({
-                takeClaims: false,
-                settleUsingBurn: false
-            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             new bytes(0)
         );
-        
+
         // Check how many YES tokens the test contract received
         uint256 testContractYesTokensAfter = yesToken.balanceOf(address(this));
         uint256 yesTokensReceived = testContractYesTokensAfter - testContractYesTokensBefore;
-        
+
         console.log("Test contract YES tokens before:", testContractYesTokensBefore);
         console.log("Test contract YES tokens after:", testContractYesTokensAfter);
         console.log("YES tokens received by test contract:", yesTokensReceived);
-        
+
         // Transfer the YES tokens to the user
         yesToken.transfer(user, yesTokensReceived);
-        
+
         // Record user balances after swap and transfer
         uint256 userCollateralAfter = collateralToken.balanceOf(user);
         uint256 userYesTokensAfter = yesToken.balanceOf(user);
-        
+
         console.log("User collateral after swap:", userCollateralAfter);
         console.log("User YES tokens after swap:", userYesTokensAfter);
         console.log("YES tokens received by user:", userYesTokensAfter - userYesTokensBefore);
-        
+
         // Verify the swap was successful
         assertLt(userCollateralAfter, userCollateralBefore + 6 * 1e6, "User should have spent collateral");
         assertGt(userYesTokensAfter, userYesTokensBefore, "User should have received YES tokens");
-    
     }
 
     // Helper function to perform a swap and return tokens received
-    function _performSwap(
-        bytes32 marketId, 
-        address user, 
-        uint256 collateralAmount
-    ) internal returns (uint256 tokensReceived) {
+    function _performSwap(bytes32 marketId, address user, uint256 collateralAmount)
+        internal
+        returns (uint256 tokensReceived)
+    {
         // Get market details
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-        
+
         // User transfers collateral to the test contract
         vm.prank(user);
         collateralToken.transfer(address(this), collateralAmount);
-        
+
         // Record token balance before swap
         uint256 testContractYesTokensBefore = yesToken.balanceOf(address(this));
-        
+
         // Approve tokens for swap with a buffer for slippage (10% more than requested)
         uint256 approvalAmount = collateralAmount * 110 / 100; // Add 10% buffer
         collateralToken.approve(address(poolSwapTest), approvalAmount);
-        
+
         // Execute the swap
         poolSwapTest.swap(
             market.yesPoolKey,
@@ -414,19 +405,16 @@ contract PredictionMarketHookTest is Test, Deployers {
                 amountSpecified: int256(collateralAmount),
                 sqrtPriceLimitX96: 4295128739 + 1 // Minimum valid sqrtPriceX96 + 1
             }),
-            PoolSwapTest.TestSettings({
-                takeClaims: false,
-                settleUsingBurn: false
-            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             new bytes(0)
         );
-        
+
         // Calculate tokens received
         tokensReceived = yesToken.balanceOf(address(this)) - testContractYesTokensBefore;
-        
+
         // Transfer tokens to user
         yesToken.transfer(user, tokensReceived);
-        
+
         return tokensReceived;
     }
 
@@ -435,43 +423,73 @@ contract PredictionMarketHookTest is Test, Deployers {
         bytes32 marketId = createTestMarketWithLiquidity();
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-        
+
         // Setup user
         address user = makeAddr("user");
         collateralToken.mint(user, 20 * 1e6); // 20 USDC instead of 10
-        
+
         // Perform swap and get tokens received
         uint256 yesTokensReceived = _performSwap(marketId, user, 6 * 1e6);
         console.log("YES tokens received by user:", yesTokensReceived);
-        
+
         // Record balances before claiming
         uint256 userCollateralBefore = collateralToken.balanceOf(user);
-        
+
         // Oracle resolves the market as YES
         hook.resolveMarket(marketId, true);
-        
+
         // User claims winnings
         vm.startPrank(user);
         yesToken.approve(address(hook), yesTokensReceived);
         hook.claimWinnings(marketId);
-        
+
         // Verify claim was successful
         uint256 userCollateralAfter = collateralToken.balanceOf(user);
         uint256 collateralReceived = userCollateralAfter - userCollateralBefore;
-        
+
         console.log("Collateral received from claim:", collateralReceived);
-        
+
         // Verify token burning and collateral received
         assertEq(yesToken.balanceOf(user), 0, "All YES tokens should be burned");
         assertEq(collateralReceived, yesTokensReceived / 1e12, "User should receive 1 USDC per YES token");
-        
+
         // Verify user is marked as claimed
         assertTrue(hook.hasClaimed(marketId, user), "User should be marked as claimed");
-        
+
         // Try to claim again (should revert)
         vm.expectRevert(PredictionMarketHook.AlreadyClaimed.selector);
         hook.claimWinnings(marketId);
-        
+
         vm.stopPrank();
+    }
+
+        // Test for getMarkets function
+    function test_getMarkets() public {
+        // Create multiple markets
+
+        collateralToken.mint(address(this), 1e6 * 1e6); 
+        collateralToken.approve(address(hook), type(uint256).max); // Approve hook to spend tokens
+    
+        
+        bytes32 market1Id = createTestMarket();
+        bytes32 market2Id = createTestMarket();
+        bytes32 market3Id = createTestMarket();
+        bytes32 market4Id = createTestMarket();
+        bytes32 market5Id = createTestMarket();
+        
+        // Test getting all markets
+        Market[] memory allMarkets = hook.getAllMarkets();
+        assertEq(allMarkets.length, 5, "Should have 5 markets");
+        
+        // Test getting market count
+        uint256 count = hook.getMarketCount();
+        assertEq(count, 5, "Market count should be 5");
+        
+        // Test pagination - first page (offset 0, limit 2)
+        Market[] memory page1 = hook.getMarkets(0, 2);
+        assertEq(page1.length, 2, "First page should have 2 markets");
+        assertEq(keccak256(abi.encode(page1[0])), keccak256(abi.encode(allMarkets[0])), "First market should match");
+        assertEq(keccak256(abi.encode(page1[1])), keccak256(abi.encode(allMarkets[1])), "Second market should match");
+
     }
 }
