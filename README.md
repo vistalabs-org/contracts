@@ -152,3 +152,15 @@ cast send 0x2ddB197a62723880D182B64cd4f48425A881Ce23 "approve(address,uint256)" 
 # Deposit collateral and get outcome tokens
 # (Implementation depends on your contract's specific functions)
 ```
+
+# Known errors
+
+eigenlayer library 
+```bash
+find lib/eigenlayer-middleware -name "*.sol" -exec sed -i 's/pragma solidity \^0.8.27/pragma solidity ^0.8.26/g' {} \;
+```
+
+import adjustments
+```solidity
+import "lib/solmate/src/utils/FixedPointMathLib.sol";
+```

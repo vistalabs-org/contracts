@@ -13,11 +13,8 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {ERC20Mock} from "../test/utils/ERC20Mock.sol";
-import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
-import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
-import {AIAgent} from "../src/oracle/AIAgent.sol";
 
-contract DeployPredictionMarket is Script {
+contract DeployUniswapSepolia is Script {
     PredictionMarketHook public hook;
     PoolManager public manager;
     PoolModifyLiquidityTest public modifyLiquidityRouter;
@@ -25,9 +22,6 @@ contract DeployPredictionMarket is Script {
     PoolCreationHelper public poolCreationHelper;
     ERC20Mock public collateralToken;
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
-    address public oracle;
-    address public registry;
-    address public agent;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
@@ -45,8 +39,10 @@ contract DeployPredictionMarket is Script {
         poolCreationHelper = new PoolCreationHelper(address(manager));
         console.log("Deployed PoolCreationHelper at", address(poolCreationHelper));
 
-        // Deploy hook with proper flags
+        // Stop broadcast for HookMiner
         vm.stopBroadcast();
+        
+        // Hook mining code
         uint160 flags = uint160(
             Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
@@ -93,82 +89,27 @@ contract DeployPredictionMarket is Script {
         bytes32 marketId = hook.createMarketAndDepositCollateral(params);
         console.log("Market created with ID:", vm.toString(marketId));
 
-        vm.stopBroadcast();
-        console.log("Deployment complete!");
-
-        // Add AI Oracle component deployments
-        deployAIOracleComponents();
-        
-        // Add this to output AI Oracle addresses
-        logAIOracleAddresses();
-    }
-
-    function deployAIOracleComponents() internal {
-        // Deploy Oracle infrastructure
-        console.log("Deploying AI Oracle components to Unichain Sepolia...");
-        
-        // Use this test contract address for all AVS middleware components
-        address avsDirectory = 0x69660e721e4013dd8FEf83dCE731E915d74b8a0b;
-        address stakeRegistry = 0x7798625888ECf3EB2c3c74Dc2746e09d72747679;
-        address rewardsCoordinator = 0xA3c31d2FBAD3d924baA64f8789E03E9FA7d70d69;
-        address delegationManager = 0xDa6F662777aDB5209644cF5cf1A61A2F8a99BF48;
-        address allocationManager = 0xe03D546ADa84B5624b50aA22Ff8B87baDEf44ee2;
-        
-        // Deploy Oracle
-        oracle = address(new AIOracleServiceManager(
-            avsDirectory,
-            stakeRegistry,
-            rewardsCoordinator,
-            delegationManager,
-            allocationManager
-        ));
-        console.log("AIOracleServiceManager deployed at:", oracle);
-        
-        // Deploy Registry with the oracle address
-        registry = address(new AIAgentRegistry(oracle));
-        console.log("AIAgentRegistry deployed at:", registry);
-        
-        // Deploy Agent with the oracle address
-        agent = address(new AIAgent(
-            oracle,
-            "OpenAI",
-            "gpt-4-turbo"
-        ));
-        console.log("AIAgent deployed at:", agent);
-        
-        // Register the agent in the registry
-        AIAgentRegistry(registry).registerAgent(agent);
-        console.log("Agent registered in registry");
-        
-        // Create an initial test task to verify Oracle is working
-        try AIOracleServiceManager(oracle).createNewTask("Initial Oracle Test Task") {
-            console.log("Created initial test task successfully");
-            uint32 taskNum = AIOracleServiceManager(oracle).latestTaskNum();
-            console.log("Latest task number:", taskNum);
-        } catch Error(string memory reason) {
-            console.log("Failed to create initial task:", reason);
-        }
+        // Save deployment addresses to file for the Oracle script to use
+        saveDeploymentAddresses();
         
         vm.stopBroadcast();
     }
     
-    function logAIOracleAddresses() internal view {
-        console.log("\n========== AI ORACLE DEPLOYMENT INFO ==========");
-        console.log("Network: Unichain Sepolia (", block.chainid, ")");
-        console.log("Oracle Address: ", oracle);
-        console.log("Agent Address: ", agent);
-        console.log("Registry Address: ", registry);
+    function saveDeploymentAddresses() internal {
+        console.log("\n========== DEPLOYMENT INFO ==========");
+        console.log("Manager:", address(manager));
+        console.log("Hook:", address(hook));
+        console.log("PoolCreationHelper:", address(poolCreationHelper));
+        console.log("CollateralToken:", address(collateralToken));
+        console.log("======================================\n");
         
-        // Create a formatted string for easy copying to config.json
-        console.log("\nConfig for eigenlayer-ai-agent/config.json:");
+        // Output in JSON format for easy copying
+        console.log("JSON Format:");
         console.log("{");
-        console.log("  \"rpc_url\": \"https://sepolia-unichain.infura.io/v3/YOUR_INFURA_KEY\",");
-        console.log("  \"oracle_address\": \"", oracle, "\",");
-        console.log("  \"agent_address\": \"", agent, "\",");
-        console.log("  \"chain_id\": ", block.chainid, ",");
-        console.log("  \"agent_private_key\": \"YOUR_PRIVATE_KEY_HERE\",");
-        console.log("  \"poll_interval_seconds\": 5,");
+        console.log("  \"manager\": \"", address(manager), "\",");
+        console.log("  \"hook\": \"", address(hook), "\",");
+        console.log("  \"poolCreationHelper\": \"", address(poolCreationHelper), "\",");
+        console.log("  \"collateralToken\": \"", address(collateralToken), "\"");
         console.log("}");
-        console.log("==============================================\n");
     }
-}
+} 
