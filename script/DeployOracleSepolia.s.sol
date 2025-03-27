@@ -31,11 +31,11 @@ contract DeployOracleSepolia is Script {
         console.log("Deploying AI Oracle components to Unichain Sepolia...");
         
         // Use this test contract address for all AVS middleware components
-        address avsDirectory = 0x69660e721e4013dd8FEf83dCE731E915d74b8a0b;
-        address stakeRegistry = 0x7798625888ECf3EB2c3c74Dc2746e09d72747679;
-        address rewardsCoordinator = 0xA3c31d2FBAD3d924baA64f8789E03E9FA7d70d69;
-        address delegationManager = 0xDa6F662777aDB5209644cF5cf1A61A2F8a99BF48;
-        address allocationManager = 0xe03D546ADa84B5624b50aA22Ff8B87baDEf44ee2;
+        address avsDirectory = 0x055733000064333CaDDbC92763c58BF0192fFeBf;
+        address stakeRegistry = 0xdfB5f6CE42aAA7830E94ECFCcAd411beF4d4D5b6;
+        address rewardsCoordinator = 0xAcc1fb458a1317E886dB376Fc8141540537E68fE;
+        address delegationManager = 0xA44151489861Fe9e3055d95adC98FbD462B948e7;
+        address allocationManager = 0x78469728304326CBc65f8f95FA756B0B73164462;
         
         // Deploy Oracle with a try/catch to detect errors
         try new AIOracleServiceManager(
@@ -55,8 +55,8 @@ contract DeployOracleSepolia is Script {
                 
                 try new AIAgent(
                     oracle,
-                    "OpenAI",
-                    "gpt-4-turbo"
+                    "google",
+                    "gemma-3-27b-it:free"
                 ) returns (AIAgent agentContract) {
                     agent = address(agentContract);
                     console.log("AIAgent deployed at:", agent);

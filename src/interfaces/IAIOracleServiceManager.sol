@@ -43,7 +43,6 @@ interface IAIOracleServiceManager {
     ) external returns (Task memory);
 
     function respondToTask(
-        Task calldata task,
         uint32 referenceTaskIndex,
         bytes calldata signature
     ) external;

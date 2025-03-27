@@ -75,19 +75,21 @@ contract AIAgent is Ownable {
     
     /**
      * @dev Process a task and submit the agent's response
-     * @param task The task to process
      * @param taskIndex The task index in the service manager
      * @param signature The signature representing the agent's response
      */
     function processTask(
-        IAIOracleServiceManager.Task calldata task,
         uint32 taskIndex,
         bytes memory signature
     ) external onlyOwner {
         require(status == AgentStatus.Active, "Agent is not active");
         
+        // Get the task from the manager by index
+        bytes32 taskHash = serviceManager.allTaskHashes(taskIndex);
+        require(taskHash != bytes32(0), "Task does not exist");
+        
         // Submit the agent's response to the service manager
-        serviceManager.respondToTask(task, taskIndex, signature);
+        serviceManager.respondToTask(taskIndex, signature);
         
         // Update agent stats
         tasksCompleted++;

@@ -145,15 +145,19 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         return newTask;
     }
 
+    /**
+     * @notice Respond to a task based on its index
+     * @param referenceTaskIndex The index of the task
+     * @param signature The signature representing the response
+     */
     function respondToTask(
-        Task calldata task,
         uint32 referenceTaskIndex,
-        bytes memory signature
-    ) external onlyOperator {
-        // check that the task is valid, hasn't been responsed yet, and is being responded in time
+        bytes calldata signature
+    ) external {
+        // Verify the task exists and has not been resolved
         require(
-            keccak256(abi.encode(task)) == allTaskHashes[referenceTaskIndex],
-            "supplied task does not match the one recorded in the contract"
+            allTaskHashes[referenceTaskIndex] != bytes32(0),
+            "task does not exist"
         );
         require(
             allTaskResponses[msg.sender][referenceTaskIndex].length == 0,
@@ -164,8 +168,8 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
             "Task has already been resolved"
         );
 
-        // The message that was signed
-        bytes32 messageHash = keccak256(abi.encodePacked("Hello, ", task.name));
+        // The message that was signed (simplified for gas savings)
+        bytes32 messageHash = keccak256(abi.encodePacked("Task", referenceTaskIndex));
         bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
         bytes4 magicValue = IERC1271Upgradeable.isValidSignature.selector;
         bytes4 isValidSignatureResult =
@@ -173,6 +177,12 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
 
         require(magicValue == isValidSignatureResult, "Invalid signature");
 
+        // Get task for event emission
+        Task memory task;
+        
+        // Create minimal task data just for the event
+        task.taskCreatedBlock = uint32(block.number);
+        
         // updating the storage with task responses
         allTaskResponses[msg.sender][referenceTaskIndex] = signature;
         
