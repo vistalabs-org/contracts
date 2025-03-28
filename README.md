@@ -6,17 +6,18 @@ A decentralized prediction market built on Uniswap v4 hooks, allowing users to s
 
 | Contract | Address |
 |----------|---------|
-| PoolManager | 0x461248D11dad5a36f252A29cE42A6513eAA1dB3e |
-| PoolCreationHelper | 0xB1C6fafA7aC5F473C7ceBAfeC9e43EB19FB76891 |
-| PredictionMarketHook | 0x3554155e933b167BE0b4eB71CF1008AEbd85ca80 |
+| PoolManager | 0xE66AD7D932B9261d22cc77b79dEC7aD4c2985270 |
+| PoolModifyLiquidityTest | 0xb3969eFffB98d7f31c30948F057b5427aa4A6dAb |
+| PoolSwapTest | 0x4B5B734A133A4eB84fAc87750B00992260dA8096 |
+| PoolCreationHelper | 0xcc98664291643189a2fb1F51d1cAB6ada1e57850 |
+| PredictionMarketHook | 0xc5769798BbdFC9Aabbf9D2eBc212Cb00cd7cCA80 |
 | Test USDC | 0x56C99509D99c6ebd90Ba46A277f93611775Bd001 |
 
 ### Deployed Markets
 
 | Market Description | Market ID |
 |-------------------|-----------|
-| Test market: "Market resolves to YES if ETH is above 1000" | 0xb485068b7d9e535fcc34930284e564af6c63a9bb08ef352c2aca4a7bae2175f5 |
-
+| Test market: "Market resolves to YES if ETH is above 1000" | 
 ## Created Markets
 
 | Market ID | Description |
@@ -144,10 +145,10 @@ Example commands using cast (Foundry's CLI tool):
 
 ```bash
 # Get market details
-cast call 0x351af7D9f5F2BeC762bEb4a5627FF29749458A80 "getMarketById(bytes32)(tuple)" 0xd7ca1d2e31a6879cef41594eeb5a2644738329559765fe9ddae573d00bdf4ac6
+cast call 0xc5769798BbdFC9Aabbf9D2eBc212Cb00cd7cCA80 "getMarketById(bytes32)(tuple)" 0xd7ca1d2e31a6879cef41594eeb5a2644738329559765fe9ddae573d00bdf4ac6
 
 # Approve USDC for the hook contract
-cast send 0x2ddB197a62723880D182B64cd4f48425A881Ce23 "approve(address,uint256)" 0x351af7D9f5F2BeC762bEb4a5627FF29749458A80 1000000000 --private-key YOUR_PRIVATE_KEY
+cast send 0x56C99509D99c6ebd90Ba46A277f93611775Bd001 "approve(address,uint256)" 0xc5769798BbdFC9Aabbf9D2eBc212Cb00cd7cCA80 1000000000 --private-key YOUR_PRIVATE_KEY
 
 # Deposit collateral and get outcome tokens
 # (Implementation depends on your contract's specific functions)

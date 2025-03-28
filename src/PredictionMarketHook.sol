@@ -238,6 +238,27 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         return marketId;
     }
 
+    // mint YES / NO tokens based on collateral amount
+    // Users can mint based on current price to provide liquidity to the market
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) public {
+        Market memory market = _markets[marketId];
+
+        // Calculate collateral to return (accounting for decimal differences)
+        // YES/NO tokens have 18 decimals, collateral might have different decimals
+        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+
+        // Take collateral from the user
+        IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
+
+        // Calculate token amount to mint (adjusting for decimal differences)
+        uint256 tokenAmount = collateralAmount * decimalAdjustment;
+
+        // Mint YES and NO tokens to the user
+        market.yesToken.mint(msg.sender, tokenAmount);
+        market.noToken.mint(msg.sender, tokenAmount);
+    }
+
     // Function to get all market IDs
     function getAllMarketIds() external view returns (bytes32[] memory) {
         return _allMarketIds;

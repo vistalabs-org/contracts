@@ -30,7 +30,6 @@ import "./utils/Quoter.sol";
 import {toBeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 
-
 /// @title PredictionMarketHook - Hook for prediction market management
 
 contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
@@ -455,7 +454,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     // Users can mint based on current price to provide liquidity to the market
     function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) public {
         Market memory market = _markets[marketId];
-        
+
         // Calculate collateral to return (accounting for decimal differences)
         // YES/NO tokens have 18 decimals, collateral might have different decimals
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
@@ -473,15 +472,13 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
     }
 
     /**
-    * @notice needs offchain logic to have the correct amount of collateral to mint
-    * @param marketId The ID of the market
-    * @param params The swap parameters for the trade
-    */
-    function mintCollateralAndTrade(
-        bytes32 marketId,
-        IPoolManager.SwapParams calldata params,
-        uint256 collateralAmount
-    ) external {
+     * @notice needs offchain logic to have the correct amount of collateral to mint
+     * @param marketId The ID of the market
+     * @param params The swap parameters for the trade
+     */
+    function mintCollateralAndTrade(bytes32 marketId, IPoolManager.SwapParams calldata params, uint256 collateralAmount)
+        external
+    {
         Market memory market = _markets[marketId];
 
         // mint collateral
@@ -490,7 +487,6 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         // trade
         poolManager.swap(market.yesPoolKey, params, "");
     }
-    
 
     // Helper function to get current reserves
     function _getReserves(PoolKey calldata key) internal view returns (uint256 reserve0, uint256 reserve1) {
@@ -499,40 +495,38 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         reserve1 = CurrencyLibrary.balanceOf(key.currency1, address(poolManager));
     }
 
-
     // Public wrapper for testing
     function getReserves(PoolKey calldata key) public view returns (uint256 reserve0, uint256 reserve1) {
         return _getReserves(key);
     }
 
     // Get the unspecified amount for a swap based on the swap parameters
-    function getAmountUnspecified(
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params
-    ) public view returns (uint256 amountUnspecified) {
+    function getAmountUnspecified(PoolKey calldata key, IPoolManager.SwapParams calldata params)
+        public
+        view
+        returns (uint256 amountUnspecified)
+    {
         bytes32 marketId = _poolToMarketId[key.toId()];
         Market memory market = _markets[marketId];
         // checking if the market has a dynamic scaling factor
         uint256 scaling = market.curveId == 1 ? 1e18 : getTimeRemainingSqrt(marketId);
         console.log("scaling", scaling);
-        
+
         // Get current reserves
         (uint256 reserve0, uint256 reserve1) = getReserves(key);
-        
+
         // Determine if this is an exact input swap (positive amountSpecified)
         bool isExactInput = params.amountSpecified > 0;
-        
+
         // Get the absolute value of amountSpecified
-        uint256 amountSpecified = isExactInput ? 
-            uint256(params.amountSpecified) : 
-            uint256(-params.amountSpecified);
-        
+        uint256 amountSpecified = isExactInput ? uint256(params.amountSpecified) : uint256(-params.amountSpecified);
+
         if (isExactInput) {
             // For exact input swaps, calculate the new input reserve
             uint256 inputReserve = params.zeroForOne ? reserve0 : reserve1;
             uint256 outputReserve = params.zeroForOne ? reserve1 : reserve0;
             uint256 newInputReserve = inputReserve + amountSpecified;
-            
+
             // Calculate new output reserve based on the invariant
             uint256 newOutputReserve;
             if (params.zeroForOne) {
@@ -542,16 +536,15 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
                 // If swapping token1 for token0, calculate new reserve0 from new reserve1
                 newOutputReserve = quoter.computeReserve0FromReserve1(newInputReserve, LIQUIDITY, scaling);
             }
-            
+
             // The unspecified amount is the output amount
-            amountUnspecified = outputReserve > newOutputReserve ? 
-                outputReserve - newOutputReserve : 0;
+            amountUnspecified = outputReserve > newOutputReserve ? outputReserve - newOutputReserve : 0;
         } else {
             // For exact output swaps, we need to calculate the input needed
             // First, calculate what the new output reserve would be
             uint256 outputReserve = params.zeroForOne ? reserve1 : reserve0;
             uint256 newOutputReserve = outputReserve - amountSpecified;
-            
+
             // Then, calculate what the new input reserve should be
             uint256 newInputReserve;
             if (params.zeroForOne) {
@@ -561,13 +554,12 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
                 // If swapping token1 for token0, calculate new reserve1 from new reserve0
                 newInputReserve = quoter.computeReserve1FromReserve0(newOutputReserve, LIQUIDITY, scaling);
             }
-            
+
             // The input amount is the difference between the new and current input reserves
             uint256 inputReserve = params.zeroForOne ? reserve0 : reserve1;
-            amountUnspecified = newInputReserve > inputReserve ? 
-                newInputReserve - inputReserve : 0;
+            amountUnspecified = newInputReserve > inputReserve ? newInputReserve - inputReserve : 0;
         }
-        
+
         return amountUnspecified;
     }
 
@@ -582,5 +574,4 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         // Scale up by 1e18 before sqrt to get a larger number
         return FixedPointMathLib.sqrt(timeRemaining * 1e18) * 1e9;
     }
-
 }

@@ -33,7 +33,9 @@ contract DeployPredictionMarket is Script {
 
         // Deploy test routers
         modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
+        console.log("Deployed PoolModifyLiquidityTest at", address(modifyLiquidityRouter));
         poolSwapTest = new PoolSwapTest(manager);
+        console.log("Deployed PoolSwapTest at", address(poolSwapTest));
 
         // Deploy PoolCreationHelper
         poolCreationHelper = new PoolCreationHelper(address(manager));
@@ -59,35 +61,7 @@ contract DeployPredictionMarket is Script {
         hook = new PredictionMarketHook{salt: salt}(manager, modifyLiquidityRouter, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
-
-        // Deploy mock collateral token
-        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
-        console.log("Collateral token deployed at", address(collateralToken));
-
-        // Mint tokens to deployer
-        address deployer = vm.addr(deployerPrivateKey);
-        collateralToken.mint(deployer, 1000000 * 10 ** 6);
-        console.log("Minted 1,000,000 USDC to deployer");
-
-        // Approve hook to spend tokens
-        collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
-
-        // Create a market
-        CreateMarketParams memory params = CreateMarketParams({
-            oracle: deployer,
-            creator: deployer,
-            collateralAddress: address(collateralToken),
-            collateralAmount: COLLATERAL_AMOUNT,
-            title: "Test market",
-            description: "Market resolves to YES if ETH is above 1000",
-            duration: 30 days,
-            curveId: 0
-        });
-
-        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
-        console.log("Market created with ID:", vm.toString(marketId));
-
         vm.stopBroadcast();
-        console.log("Deployment complete!");
+
     }
 }
