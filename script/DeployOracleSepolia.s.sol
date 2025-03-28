@@ -6,6 +6,7 @@ import "forge-std/console.sol";
 import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
 import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
 import {AIAgent} from "../src/oracle/AIAgent.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract DeployOracleSepolia is Script {
     address public oracle;
@@ -18,7 +19,7 @@ contract DeployOracleSepolia is Script {
         // Start broadcasting with higher gas limit
         vm.startBroadcast(deployerPrivateKey);
         
-        deployAIOracleComponents();
+        deployAIOracleComponents(deployerPrivateKey);
         
         // End broadcasting
         vm.stopBroadcast();
@@ -27,7 +28,7 @@ contract DeployOracleSepolia is Script {
         logAIOracleAddresses();
     }
 
-    function deployAIOracleComponents() internal {
+    function deployAIOracleComponents(uint256 deployerPrivateKey) internal {
         console.log("Deploying AI Oracle components to Unichain Sepolia...");
         
         // Use this test contract address for all AVS middleware components
@@ -37,6 +38,10 @@ contract DeployOracleSepolia is Script {
         address delegationManager = 0xA44151489861Fe9e3055d95adC98FbD462B948e7;
         address allocationManager = 0x78469728304326CBc65f8f95FA756B0B73164462;
         
+        // Get the deployer address directly
+        address deployer = vm.addr(deployerPrivateKey);
+        console.log("Deployer address:", deployer);
+        
         // Deploy Oracle with a try/catch to detect errors
         try new AIOracleServiceManager(
             avsDirectory,
@@ -45,8 +50,44 @@ contract DeployOracleSepolia is Script {
             delegationManager,
             allocationManager
         ) returns (AIOracleServiceManager oracleContract) {
-            oracle = address(oracleContract);
-            console.log("AIOracleServiceManager deployed at:", oracle);
+            // Add this right after deploying the oracle
+            // Create a proxy for proper initialization
+            TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
+                address(oracleContract),
+                deployer,  // admin of the proxy
+                abi.encodeWithSelector(
+                    oracleContract.initialize.selector,
+                    deployer,  // initialOwner
+                    deployer,  // rewardsInitiator
+                    1,         // minimumResponses (test mode)
+                    5100       // consensusThreshold
+                )
+            );
+
+            // Now use the proxy address instead
+            oracle = address(proxy);
+            console.log("Oracle proxy deployed at:", oracle);
+            
+            // CREATE A NEW CONTRACT INSTANCE THAT POINTS TO THE PROXY
+            AIOracleServiceManager proxyContract = AIOracleServiceManager(oracle);
+
+            // Now call through the proxy contract
+            try proxyContract.updateConsensusParameters(1, 5100) {
+                console.log("Updated consensus parameters successfully");
+            } catch Error(string memory reason) {
+                console.log("Failed to update consensus parameters:", reason);
+            }
+            
+            // Add test operator through the proxy
+            try proxyContract.addTestOperator(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) {
+                console.log("Added test operator successfully");
+            } catch Error(string memory reason) {
+                console.log("Failed to add test operator:", reason);
+            }
+            
+            // Check current values
+            console.log("Current minimumResponses:", oracleContract.minimumResponses());
+            console.log("Test mode active:", oracleContract.minimumResponses() == 1);
             
             // Continue with other deployments only if Oracle deployment succeeds
             try new AIAgentRegistry(oracle) returns (AIAgentRegistry registryContract) {

@@ -36,7 +36,7 @@ interface IAIOracleServiceManager {
     
     function taskRespondents(uint32 taskIndex) external view returns (address[] memory);
     
-    function consensusResult(uint32 taskIndex) external view returns (bytes memory);
+    function consensusResultHash(uint32 taskIndex) external view returns (bytes32);
 
     function createNewTask(
         string memory name
@@ -53,4 +53,6 @@ interface IAIOracleServiceManager {
         uint256 _minimumResponses,
         uint256 _consensusThreshold
     ) external;
+    
+    function distributeRewards(uint32 taskIndex) external;
 }
