@@ -24,6 +24,7 @@ import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
 
 contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -35,6 +36,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
     PoolSwapTest public poolSwapTest;
     PoolModifyLiquidityTest public poolModifyLiquidityTest;
+    StateView public stateView;
 
     function setUp() public {
         // Deploy Uniswap v4 infrastructure
@@ -76,7 +78,10 @@ contract PredictionMarketHookTest is Test, Deployers {
         collateralToken.mint(address(this), 1000000 * 10 ** 6);
 
         // approve the hook to transfer the tokens
-        collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
+        collateralToken.approve(address(hook), type(uint256).max);
+
+        // Deploy StateView
+        stateView = new StateView(manager);
     }
 
     // Modifier to create a market and return its ID
@@ -137,9 +142,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 liquidityOutcomeTokens = 100 * 1e18; // 100 outcome tokens
 
         // Approve tokens for liquidity provision
-        collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
-        yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
-        noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
+        collateralToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        yesToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        noToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
 
         // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
@@ -267,9 +272,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 liquidityOutcomeTokens = 100 * 1e18; // 100 outcome tokens
 
         // Approve tokens for liquidity provision
-        collateralToken.approve(address(poolModifyLiquidityTest), liquidityCollateral);
-        yesToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
-        noToken.approve(address(poolModifyLiquidityTest), liquidityOutcomeTokens);
+        collateralToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        yesToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        noToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
 
         // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
@@ -334,7 +339,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         console.log("User YES tokens before swap:", userYesTokensBefore);
 
         // Approve the pool manager to use the test contract's tokens with a buffer for slippage
-        collateralToken.approve(address(poolSwapTest), 6 * 1e6);
+        collateralToken.approve(address(poolSwapTest), type(uint256).max);
 
         // In our pool setup, token0 is collateral and token1 is YES token
         bool zeroForOne = true; // Swapping collateral (token0) for YES tokens (token1)
@@ -490,4 +495,43 @@ contract PredictionMarketHookTest is Test, Deployers {
         assertEq(keccak256(abi.encode(page1[0])), keccak256(abi.encode(allMarkets[0])), "First market should match");
         assertEq(keccak256(abi.encode(page1[1])), keccak256(abi.encode(allMarkets[1])), "Second market should match");
     }
+
+    function test_initialOutcomeTokenPrices() public {
+        // Create a market with liquidity
+        bytes32 marketId = createTestMarketWithLiquidity();
+        
+        // Get market details
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Calculate the current price for YES tokens
+        (uint160 sqrtPriceX96Yes,,,) = stateView.getSlot0(market.yesPoolKey.toId());
+        uint256 priceYesInCollateral = calculatePrice(sqrtPriceX96Yes, true);
+        
+        // Calculate the current price for NO tokens
+        (uint160 sqrtPriceX96No,,,) = stateView.getSlot0(market.noPoolKey.toId());
+        uint256 priceNoInCollateral = calculatePrice(sqrtPriceX96No, true);
+        
+        // Log the prices
+        console.log("YES token price in USDC: ", priceYesInCollateral / 1e6);
+        console.log("NO token price in USDC: ", priceNoInCollateral / 1e6);
+        
+        // Check that prices are close to 0.5 USDC (with some tolerance for rounding)
+        assertApproxEqRel(priceYesInCollateral, 0.5 * 1e6, 0.05e18); // 5% tolerance
+        assertApproxEqRel(priceNoInCollateral, 0.5 * 1e6, 0.05e18);  // 5% tolerance
+    }
+
+    // Helper function to calculate price from sqrtPriceX96
+    function calculatePrice(uint160 sqrtPriceX96, bool zeroForOne) private pure returns (uint256) {
+        uint256 price;
+        if (zeroForOne) {
+            // If collateral is token0, price = (1/sqrtPrice)^2
+            price = (2**192 * 1e6) / uint256(sqrtPriceX96) ** 2;
+        } else {
+            // If collateral is token1, price = sqrtPrice^2
+            price = (uint256(sqrtPriceX96) ** 2 * 1e6) / 2**192;
+        }
+        return price;
+    }
+
+
 }

@@ -28,8 +28,8 @@ contract DeployPredictionMarket is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy Uniswap infrastructure
-        manager = new PoolManager(address(this));
-        console.log("Deployed PoolManager at", address(manager));
+        manager = PoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
+        console.log("PoolManager at", address(manager));
 
         // Deploy test routers
         modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);

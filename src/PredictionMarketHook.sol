@@ -166,10 +166,12 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     //////////////////////////
     function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
         // Create YES and NO tokens
+        console.log("Creating YES and NO tokens");
         OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
         OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
 
         // Each unit of collateral backs 1 yes token and 1 no token
+        console.log("Minting YES and NO tokens to creator");
         uint256 yesTokens = params.collateralAmount;
         uint256 noTokens = params.collateralAmount;
 
@@ -178,12 +180,16 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         OutcomeToken(address(noToken)).mint(params.creator, noTokens);
 
         // Transfer collateral to this contract
+        console.log("Transferring collateral to this contract");
         IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
 
         // Determine token order based on addresses
+        console.log("Determining token order based on addresses");
         bool collateralIsToken0 = params.collateralAddress < address(yesToken);
+        console.log("YES pool token0: %s", collateralIsToken0 ? params.collateralAddress : address(yesToken));
 
         // Create YES pool key
+        console.log("Creating YES pool key");
         PoolKey memory yesPoolKey = PoolKey({
             currency0: Currency.wrap(collateralIsToken0 ? params.collateralAddress : address(yesToken)),
             currency1: Currency.wrap(collateralIsToken0 ? address(yesToken) : params.collateralAddress),
@@ -193,8 +199,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         });
 
         bool collateralIsToken0No = params.collateralAddress < address(noToken);
-
+        console.log("NO pool token0: %s", collateralIsToken0No ? params.collateralAddress : address(noToken));
         // Create NO pool key
+        console.log("Creating NO pool key");
         PoolKey memory noPoolKey = PoolKey({
             currency0: Currency.wrap(collateralIsToken0No ? params.collateralAddress : address(noToken)),
             currency1: Currency.wrap(collateralIsToken0No ? address(noToken) : params.collateralAddress),
@@ -204,13 +211,16 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         });
 
         // Create both pools
-        poolCreationHelper.createUniswapPool(yesPoolKey);
-        poolCreationHelper.createUniswapPool(noPoolKey);
+        console.log("Creating both pools");
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, collateralIsToken0);
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, collateralIsToken0No);
 
         // Create market ID from both pool keys
+        console.log("Creating market ID from both pool keys");
         bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), noPoolKey.toId()));
 
         // Store market info
+        console.log("Storing market info");
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
             noPoolKey: noPoolKey,
@@ -225,7 +235,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             title: params.title,
             description: params.description,
             endTimestamp: block.timestamp + params.duration,
-            curveId: params.curveId
+            curveId: params.curveId        
         });
 
         // Add market ID to the array of all markets

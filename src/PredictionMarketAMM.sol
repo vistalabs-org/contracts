@@ -244,7 +244,7 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
             hooks: IHooks(address(this))
         });
         // Create both pools
-        poolCreationHelper.createUniswapPool(yesPoolKey);
+        poolCreationHelper.createUniswapPoolWithoutCollateral(yesPoolKey);
 
         // Create market ID from both pool keys
         bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), yesPoolKey.toId()));
