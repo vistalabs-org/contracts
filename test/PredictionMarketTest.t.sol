@@ -463,33 +463,31 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.stopPrank();
     }
 
-        // Test for getMarkets function
+    // Test for getMarkets function
     function test_getMarkets() public {
         // Create multiple markets
 
-        collateralToken.mint(address(this), 1e6 * 1e6); 
+        collateralToken.mint(address(this), 1e6 * 1e6);
         collateralToken.approve(address(hook), type(uint256).max); // Approve hook to spend tokens
-    
-        
+
         bytes32 market1Id = createTestMarket();
         bytes32 market2Id = createTestMarket();
         bytes32 market3Id = createTestMarket();
         bytes32 market4Id = createTestMarket();
         bytes32 market5Id = createTestMarket();
-        
+
         // Test getting all markets
         Market[] memory allMarkets = hook.getAllMarkets();
         assertEq(allMarkets.length, 5, "Should have 5 markets");
-        
+
         // Test getting market count
         uint256 count = hook.getMarketCount();
         assertEq(count, 5, "Market count should be 5");
-        
+
         // Test pagination - first page (offset 0, limit 2)
         Market[] memory page1 = hook.getMarkets(0, 2);
         assertEq(page1.length, 2, "First page should have 2 markets");
         assertEq(keccak256(abi.encode(page1[0])), keccak256(abi.encode(allMarkets[0])), "First market should match");
         assertEq(keccak256(abi.encode(page1[1])), keccak256(abi.encode(allMarkets[1])), "Second market should match");
-
     }
 }

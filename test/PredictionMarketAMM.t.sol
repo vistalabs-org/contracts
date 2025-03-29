@@ -43,23 +43,23 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Create market
         bytes32 marketId = createTestMarket();
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Mint outcome tokens
-        uint256 mintAmount = 1000 * 10**6; // 1000 USDC
+        uint256 mintAmount = 1000 * 10 ** 6; // 1000 USDC
         collateralToken.approve(address(hook), type(uint256).max);
         hook.mintOutcomeTokens(marketId, mintAmount);
-        
+
         // Add liquidity to the pool
-        uint256 liquidityAmount = 399 * 10**18; // 399 YES tokens
+        uint256 liquidityAmount = 399 * 10 ** 18; // 399 YES tokens
         OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
         OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
         hook.addLiquidity(market.yesPoolKey, liquidityAmount);
-        
+
         // Approve tokens for swapping
         OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
         OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
         collateralToken.approve(address(poolSwapTest), type(uint256).max);
-        
+
         // Store market in a storage variable for tests to access
         testMarket = market;
         _;
@@ -69,23 +69,23 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Create market
         bytes32 marketId = createTestMarketDynamic();
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Mint outcome tokens
-        uint256 mintAmount = 1000 * 10**6; // 1000 USDC
+        uint256 mintAmount = 1000 * 10 ** 6; // 1000 USDC
         collateralToken.approve(address(hook), type(uint256).max);
         hook.mintOutcomeTokens(marketId, mintAmount);
-        
+
         // Add liquidity to the pool
-        uint256 liquidityAmount = 399 * 10**18; // 399 YES tokens
+        uint256 liquidityAmount = 399 * 10 ** 18; // 399 YES tokens
         OutcomeToken(address(market.yesToken)).approve(address(hook), type(uint256).max);
         OutcomeToken(address(market.noToken)).approve(address(hook), type(uint256).max);
         hook.addLiquidity(market.yesPoolKey, liquidityAmount);
-        
+
         // Approve tokens for swapping
         OutcomeToken(address(market.yesToken)).approve(address(poolSwapTest), type(uint256).max);
         OutcomeToken(address(market.noToken)).approve(address(poolSwapTest), type(uint256).max);
         collateralToken.approve(address(poolSwapTest), type(uint256).max);
-        
+
         // Store market in a storage variable for tests to access
         testMarket = market;
         _;
@@ -164,7 +164,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         return hook.createMarketAndDepositCollateral(params);
     }
 
-        // Remove the modifier and make it a helper function instead
+    // Remove the modifier and make it a helper function instead
     function createTestMarketDynamic() public returns (bytes32) {
         CreateMarketParams memory params = CreateMarketParams({
             oracle: address(this),
@@ -230,48 +230,49 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Create market
         bytes32 marketId = createTestMarket();
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Record initial balances
         uint256 initialYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
         uint256 initialNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
         uint256 initialCollateralBalance = collateralToken.balanceOf(address(this));
-        
+
         // Amount to mint
-        uint256 mintAmount = 10 * 10**6; // 10 USDC (assuming 6 decimals)
-        
+        uint256 mintAmount = 10 * 10 ** 6; // 10 USDC (assuming 6 decimals)
+
         // Calculate expected token amount (adjusting for decimal differences)
         uint256 collateralDecimals = collateralToken.decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 expectedTokenAmount = mintAmount * decimalAdjustment;
-        
+
         // Approve collateral
         collateralToken.approve(address(hook), mintAmount);
-        
+
         // Mint outcome tokens
         hook.mintOutcomeTokens(marketId, mintAmount);
-        
+
         // Check balances after minting
         uint256 newYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
         uint256 newNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
         uint256 newCollateralBalance = collateralToken.balanceOf(address(this));
-        
+
         // Verify 1:1:1 ratio with decimal adjustment
         assertEq(newYesBalance - initialYesBalance, expectedTokenAmount, "Should mint adjusted amount of YES tokens");
         assertEq(newNoBalance - initialNoBalance, expectedTokenAmount, "Should mint adjusted amount of NO tokens");
-        assertEq(initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral");
+        assertEq(
+            initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral"
+        );
     }
 
     // Parameterized test function to test all swap combinations
-    function _testSwap(
-        bool zeroForOne,
-        int256 amountSpecified,
-        uint160 sqrtPriceLimitX96
-    ) internal withMarketAndLiquidity {
+    function _testSwap(bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96)
+        internal
+        withMarketAndLiquidity
+    {
         // Get reserves before swap
         (uint256 reserve0Before, uint256 reserve1Before) = hook.getReserves(testMarket.yesPoolKey);
         console.log("Reserve0 before swap:", reserve0Before);
         console.log("Reserve1 before swap:", reserve1Before);
-        
+
         // Calculate expected amount
         uint256 expectedAmount = hook.getAmountUnspecified(
             testMarket.yesPoolKey,
@@ -282,7 +283,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             })
         );
         console.log("Expected amount:", expectedAmount);
-        
+
         // Perform swap
         BalanceDelta delta = poolSwapTest.swap(
             testMarket.yesPoolKey,
@@ -294,21 +295,21 @@ contract PredictionMarketHookTest is Test, Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ""
         );
-        
+
         // Get reserves after swap
         (uint256 reserve0After, uint256 reserve1After) = hook.getReserves(testMarket.yesPoolKey);
         console.log("Reserve0 after swap:", reserve0After);
         console.log("Reserve1 after swap:", reserve1After);
-        
+
         // Verify delta
         int128 amount0 = delta.amount0();
         int128 amount1 = delta.amount1();
         console.log("Delta amount0:", amount0);
         console.log("Delta amount1:", amount1);
-        
+
         // Check appropriate condition based on swap direction and type
         bool isExactInput = amountSpecified > 0;
-        
+
         if (zeroForOne) {
             if (isExactInput) {
                 // zeroForOne + exactInput: output should be less than input due to slippage
@@ -326,7 +327,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             } else {
                 // oneForZero + exactOutput: For exact output, we're getting exactly what we asked for
                 // Convert to int256 for comparison to avoid overflo
-                
+
                 // And that the input amount is greater than the output amount due to slippage
                 // assertTrue(amount1 < -amount0, "Input should be less than output due to slippage");
                 assertTrue(amount1 < -amount0, "Input should be greater than output due to slippage");
@@ -337,8 +338,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Test case 1: zeroForOne true and positive amountSpecified (exact input)
     function test_swap_ZeroForOne_ExactInput() public {
         _testSwap(
-            true,                       // zeroForOne
-            10 * 1e18,                  // amountSpecified (positive = exact input)
+            true, // zeroForOne
+            10 * 1e18, // amountSpecified (positive = exact input)
             TickMath.MIN_SQRT_PRICE + 1 // sqrtPriceLimitX96
         );
     }
@@ -346,8 +347,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Test case 2: zeroForOne true and negative amountSpecified (exact output)
     function test_swap_ZeroForOne_ExactOutput() public {
         _testSwap(
-            true,                       // zeroForOne
-            -5 * 1e18,                  // amountSpecified (negative = exact output)
+            true, // zeroForOne
+            -5 * 1e18, // amountSpecified (negative = exact output)
             TickMath.MAX_SQRT_PRICE - 1 // sqrtPriceLimitX96
         );
     }
@@ -355,8 +356,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Test case 3: zeroForOne false and positive amountSpecified (exact input)
     function test_swap_OneForZero_ExactInput() public {
         _testSwap(
-            false,                      // zeroForOne
-            10 * 1e18,                  // amountSpecified (positive = exact input)
+            false, // zeroForOne
+            10 * 1e18, // amountSpecified (positive = exact input)
             TickMath.MAX_SQRT_PRICE - 1 // sqrtPriceLimitX96
         );
     }
@@ -364,8 +365,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Test case 4: zeroForOne false and negative amountSpecified (exact output)
     function test_swap_OneForZero_ExactOutput() public {
         _testSwap(
-            false,                      // zeroForOne
-            -5 * 1e18,                  // amountSpecified (negative = exact output)
+            false, // zeroForOne
+            -5 * 1e18, // amountSpecified (negative = exact output)
             TickMath.MIN_SQRT_PRICE + 1 // sqrtPriceLimitX96
         );
     }
@@ -431,7 +432,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Get the market ID from the pool key
         bytes32 marketId = hook._poolToMarketId(testMarket.yesPoolKey.toId());
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Record initial state
         console.log("\nInitial state:");
         (uint256 initialReserve0, uint256 initialReserve1) = hook.getReserves(testMarket.yesPoolKey);
@@ -441,19 +442,19 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Prepare swap parameters
         uint256 swapAmount = 1e18; // 1 token
-        
+
         // Perform a swap each day for 30 days
         for (uint256 day = 1; day <= 28; day++) {
             console.log("Day", day);
             // Move time forward by 1 day
             vm.warp(block.timestamp + 1 days);
-            
+
             // Alternate between buying and selling
             bool zeroForOne = day % 2 == 0;
-            
+
             // Get reserves before swap
             (uint256 reserve0Before, uint256 reserve1Before) = hook.getReserves(testMarket.yesPoolKey);
-            
+
             // Perform swap
             BalanceDelta delta = poolSwapTest.swap(
                 testMarket.yesPoolKey,
@@ -465,33 +466,31 @@ contract PredictionMarketHookTest is Test, Deployers {
                 PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
                 ""
             );
-            
+
             // Get reserves after swap
             (uint256 reserve0After, uint256 reserve1After) = hook.getReserves(testMarket.yesPoolKey);
-            
+
             // Log the daily state
             console.log("\nDay", day, "results:");
             console.log("Swap direction:", zeroForOne ? "0 -> 1" : "1 -> 0");
             console.log("Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
-            console.log("Reserve0 change:", reserve0After > reserve0Before ? 
-                reserve0After - reserve0Before : 
-                reserve0Before - reserve0After
+            console.log(
+                "Reserve0 change:",
+                reserve0After > reserve0Before ? reserve0After - reserve0Before : reserve0Before - reserve0After
             );
-            console.log("Reserve1 change:", reserve1After > reserve1Before ? 
-                reserve1After - reserve1Before : 
-                reserve1Before - reserve1After
+            console.log(
+                "Reserve1 change:",
+                reserve1After > reserve1Before ? reserve1After - reserve1Before : reserve1Before - reserve1After
             );
             console.log("Delta amount0:", uint256(int256(delta.amount0())));
             console.log("Delta amount1:", uint256(int256(delta.amount1())));
-            
+
             // Verify the swap had an impact
             assertTrue(
-                reserve0After != reserve0Before || reserve1After != reserve1Before,
-                "Swap should change reserves"
+                reserve0After != reserve0Before || reserve1After != reserve1Before, "Swap should change reserves"
             );
-            
         }
-        
+
         // Final state
         (uint256 finalReserve0, uint256 finalReserve1) = hook.getReserves(testMarket.yesPoolKey);
         console.log("\nFinal state:");
@@ -499,5 +498,4 @@ contract PredictionMarketHookTest is Test, Deployers {
         console.log("Final Reserve1:", finalReserve1);
         console.log("Final Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
     }
-
 }

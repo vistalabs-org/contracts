@@ -33,7 +33,9 @@ contract DeployUniswapSepolia is Script {
 
         // Deploy test routers
         modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
+        console.log("Deployed PoolModifyLiquidityTest at", address(modifyLiquidityRouter));
         poolSwapTest = new PoolSwapTest(manager);
+        console.log("Deployed PoolSwapTest at", address(poolSwapTest));
 
         // Deploy PoolCreationHelper
         poolCreationHelper = new PoolCreationHelper(address(manager));
@@ -61,55 +63,7 @@ contract DeployUniswapSepolia is Script {
         hook = new PredictionMarketHook{salt: salt}(manager, modifyLiquidityRouter, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
-
-        // Deploy mock collateral token
-        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
-        console.log("Collateral token deployed at", address(collateralToken));
-
-        // Mint tokens to deployer
-        address deployer = vm.addr(deployerPrivateKey);
-        collateralToken.mint(deployer, 1000000 * 10 ** 6);
-        console.log("Minted 1,000,000 USDC to deployer");
-
-        // Approve hook to spend tokens
-        collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
-
-        // Create a market
-        CreateMarketParams memory params = CreateMarketParams({
-            oracle: deployer,
-            creator: deployer,
-            collateralAddress: address(collateralToken),
-            collateralAmount: COLLATERAL_AMOUNT,
-            title: "Test market",
-            description: "Market resolves to YES if ETH is above 1000",
-            duration: 30 days,
-            curveId: 0
-        });
-
-        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
-        console.log("Market created with ID:", vm.toString(marketId));
-
-        // Save deployment addresses to file for the Oracle script to use
-        saveDeploymentAddresses();
-        
         vm.stopBroadcast();
+
     }
-    
-    function saveDeploymentAddresses() internal {
-        console.log("\n========== DEPLOYMENT INFO ==========");
-        console.log("Manager:", address(manager));
-        console.log("Hook:", address(hook));
-        console.log("PoolCreationHelper:", address(poolCreationHelper));
-        console.log("CollateralToken:", address(collateralToken));
-        console.log("======================================\n");
-        
-        // Output in JSON format for easy copying
-        console.log("JSON Format:");
-        console.log("{");
-        console.log("  \"manager\": \"", address(manager), "\",");
-        console.log("  \"hook\": \"", address(hook), "\",");
-        console.log("  \"poolCreationHelper\": \"", address(poolCreationHelper), "\",");
-        console.log("  \"collateralToken\": \"", address(collateralToken), "\"");
-        console.log("}");
-    }
-} 
+}

@@ -24,7 +24,7 @@ struct Market {
     string title; // Market title
     string description; // Market description
     uint256 endTimestamp; // Market end time
-    uint256 curveId; 
+    uint256 curveId;
 }
 
 struct CreateMarketParams {
