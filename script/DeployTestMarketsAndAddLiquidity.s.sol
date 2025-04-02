@@ -41,7 +41,7 @@ contract SwapTest is Script {
         hook = PredictionMarketHook(0xABF6985E92fC0d4A8F7b8ceC535aD0215DbD0a80);
         // from uni v4 docs
         manager = PoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
-        modifyLiquidityRouter = PoolModifyLiquidityTest(0x5fa728c0a5cfd51bee4b060773f50554c0c8a7ab);
+        modifyLiquidityRouter = PoolModifyLiquidityTest(0x5fa728C0A5cfd51BEe4B060773f50554c0C8A7AB);
         
         // create markets
         createMarkets();

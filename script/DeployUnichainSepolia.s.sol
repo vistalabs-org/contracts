@@ -44,7 +44,7 @@ contract DeployPredictionMarket is Script {
         // Deploy hook with proper flags
         vm.stopBroadcast();
         uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
 
         address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;

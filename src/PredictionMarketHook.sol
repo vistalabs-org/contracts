@@ -78,7 +78,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             afterInitialize: false,
             beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
+            beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: false,
@@ -142,26 +142,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    function _beforeRemoveLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal view override returns (bytes4) {
-        // Get market from pool key
-        PoolId poolId = key.toId();
-        Market memory market = _getMarketFromPoolId(poolId);
-
-        // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
-
-        // Only allow removals after market is resolved
-        if (market.state != MarketState.Resolved) {
-            revert DirectLiquidityNotAllowed();
-        }
-
-        return BaseHook.beforeRemoveLiquidity.selector;
-    }
 
     //////////////////////////
     function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
@@ -169,19 +149,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         console.log("Creating YES and NO tokens");
         OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
         OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
-
-        // Each unit of collateral backs 1 yes token and 1 no token
-        console.log("Minting YES and NO tokens to creator");
-        uint256 yesTokens = params.collateralAmount;
-        uint256 noTokens = params.collateralAmount;
-
-        // Mint YES and NO tokens to the creator instead of this contract
-        OutcomeToken(address(yesToken)).mint(params.creator, yesTokens);
-        OutcomeToken(address(noToken)).mint(params.creator, noTokens);
-
-        // Transfer collateral to this contract
-        console.log("Transferring collateral to this contract");
-        IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
 
         // Determine token order based on addresses
         console.log("Determining token order based on addresses");
@@ -237,6 +204,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             endTimestamp: block.timestamp + params.duration,
             curveId: params.curveId        
         });
+
+        // Mint YES and NO tokens to the creator instead of this contract
+        mintOutcomeTokens(marketId, params.collateralAmount);
 
         // Add market ID to the array of all markets
         _allMarketIds.push(marketId);
