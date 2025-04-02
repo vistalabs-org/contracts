@@ -360,9 +360,12 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
         // Calculate claim amount
         uint256 claimAmount = tokenBalance / decimalAdjustment;
+        console.log("claim amount: %s", claimAmount);
 
         // Ensure there's enough collateral left to claim
+
         uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
+        console.log("remaining collateral: %s", remainingCollateral);
         require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
 
         // Burn the winning tokens

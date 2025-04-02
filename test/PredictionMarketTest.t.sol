@@ -101,6 +101,47 @@ contract PredictionMarketHookTest is Test, Deployers {
         _;
     }
 
+    function test_mintOutcomeTokens_correctRatio() public {
+        // Create market
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Record initial balances
+        uint256 initialYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
+        uint256 initialNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
+        uint256 initialCollateralBalance = collateralToken.balanceOf(address(this));
+
+        // Amount to mint
+        uint256 mintAmount = 10 * 10 ** 6; // 10 USDC (assuming 6 decimals)
+
+        // Calculate expected token amount (adjusting for decimal differences)
+        uint256 collateralDecimals = collateralToken.decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+        uint256 expectedTokenAmount = mintAmount * decimalAdjustment;
+
+        // Approve collateral
+        collateralToken.approve(address(hook), mintAmount);
+
+        // Mint outcome tokens
+        hook.mintOutcomeTokens(marketId, mintAmount);
+
+        // Check balances after minting
+        uint256 newYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
+        uint256 newNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
+        uint256 newCollateralBalance = collateralToken.balanceOf(address(this));
+
+        
+        assertEq(newYesBalance - initialYesBalance, expectedTokenAmount, "Should mint adjusted amount of YES tokens");
+        assertEq(newNoBalance - initialNoBalance, expectedTokenAmount, "Should mint adjusted amount of NO tokens");
+        assertEq(
+            initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral"
+        );
+        
+        console.log("received yes tokens: %s", newYesBalance - initialYesBalance);
+        console.log("received no tokens: %s", newNoBalance - initialNoBalance);
+        console.log("received collateral: %s", initialCollateralBalance - newCollateralBalance);
+    }
+
     // Modifier to create a market and add liquidity
     modifier createMarketWithLiquidity(bytes32 marketId) {
         // Create market first
@@ -385,90 +426,48 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     }
 
-    // Helper function to perform a swap and return tokens received
-    function _performSwap(bytes32 marketId, address user, uint256 collateralAmount)
-        internal
-        returns (uint256 tokensReceived)
-    {
-        // Get market details
-        Market memory market = hook.getMarketById(marketId);
-        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-
-        // User transfers collateral to the test contract
-        vm.prank(user);
-        collateralToken.transfer(address(this), collateralAmount);
-
-        // Record token balance before swap
-        uint256 testContractYesTokensBefore = yesToken.balanceOf(address(this));
-
-        // Approve tokens for swap with a buffer for slippage (10% more than requested)
-        uint256 approvalAmount = collateralAmount * 110 / 100; // Add 10% buffer
-        collateralToken.approve(address(poolSwapTest), approvalAmount);
-
-        // Execute the swap
-        poolSwapTest.swap(
-            market.yesPoolKey,
-            IPoolManager.SwapParams({
-                zeroForOne: true, // Swapping collateral for YES tokens
-                amountSpecified: int256(collateralAmount),
-                sqrtPriceLimitX96: 4295128739 + 1 // Minimum valid sqrtPriceX96 + 1
-            }),
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-            new bytes(0)
-        );
-
-        // Calculate tokens received
-        tokensReceived = yesToken.balanceOf(address(this)) - testContractYesTokensBefore;
-
-        // Transfer tokens to user
-        yesToken.transfer(user, tokensReceived);
-
-        return tokensReceived;
-    }
 
     function test_resolveAndClaim() public {
         // Create market with liquidity
-        bytes32 marketId = createTestMarketWithLiquidity();
+        bytes32 marketId = createTestMarket();
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-
+        OutcomeToken noToken = OutcomeToken(address(market.noToken));
+        
         // Setup user
-        address user = makeAddr("user");
-        collateralToken.mint(user, 20 * 1e6); // 20 USDC instead of 10
-
-        // Perform swap and get tokens received
-        uint256 yesTokensReceived = _performSwap(marketId, user, 6 * 1e6);
-        console.log("YES tokens received by user:", yesTokensReceived);
-
-        // Record balances before claiming
-        uint256 userCollateralBefore = collateralToken.balanceOf(user);
-
+        collateralToken.approve(address(hook), type(uint256).max);
+        //hook.mintOutcomeTokens(marketId, 10 * 1e6);
+        uint256 userCollateralBefore = collateralToken.balanceOf(address(this));
+        uint256 userYesTokensBefore = yesToken.balanceOf(address(this));
+        console.log("user yes tokens before: %s", userYesTokensBefore);
+        uint256 userNoTokensBefore = noToken.balanceOf(address(this));
+        console.log("user no tokens before: %s", userNoTokensBefore);
+        
+        
         // Oracle resolves the market as YES
         hook.resolveMarket(marketId, true);
 
         // User claims winnings
-        vm.startPrank(user);
-        yesToken.approve(address(hook), yesTokensReceived);
+        yesToken.approve(address(hook), type(uint256).max);
         hook.claimWinnings(marketId);
 
         // Verify claim was successful
-        uint256 userCollateralAfter = collateralToken.balanceOf(user);
+        uint256 userCollateralAfter = collateralToken.balanceOf(address(this));
         uint256 collateralReceived = userCollateralAfter - userCollateralBefore;
 
         console.log("Collateral received from claim:", collateralReceived);
 
         // Verify token burning and collateral received
-        assertEq(yesToken.balanceOf(user), 0, "All YES tokens should be burned");
-        assertEq(collateralReceived, yesTokensReceived / 1e12, "User should receive 1 USDC per YES token");
+        assertEq(yesToken.balanceOf(address(this)), 0, "All YES tokens should be burned");
+        assertEq(collateralReceived, userYesTokensBefore / 1e12, "User should receive 1 USDC per YES token");
 
         // Verify user is marked as claimed
-        assertTrue(hook.hasClaimed(marketId, user), "User should be marked as claimed");
+        assertTrue(hook.hasClaimed(marketId, address(this)), "User should be marked as claimed");
 
         // Try to claim again (should revert)
         vm.expectRevert(PredictionMarketHook.AlreadyClaimed.selector);
         hook.claimWinnings(marketId);
 
-        vm.stopPrank();
     }
 
     // Test for getMarkets function
