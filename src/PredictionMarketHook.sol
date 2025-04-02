@@ -5,24 +5,17 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {FixedPointMathLib} from "@uniswap/v4-core/lib/solmate/src/utils/FixedPointMathLib.sol";
-import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Market, MarketState} from "./types/MarketTypes.sol";
 import {OutcomeToken} from "./OutcomeToken.sol";
 import {console} from "forge-std/console.sol";
-import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {V4Quoter} from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
-import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
-import {QuoterRevert} from "@uniswap/v4-periphery/src/libraries/QuoterRevert.sol";
 import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
-import {Market} from "./types/MarketTypes.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
 import {CreateMarketParams} from "./types/MarketTypes.sol";
 /// @title PredictionMarketHook - Hook for prediction market management
@@ -32,7 +25,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     using FixedPointMathLib for uint160;
 
     IPoolManager public poolm;
-    PoolModifyLiquidityTest public posm;
     PoolCreationHelper public poolCreationHelper;
     int24 public TICK_SPACING = 100;
     // Market ID counter
@@ -55,23 +47,18 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Add a nonce counter as a state variable
     uint256 private _tokenDeploymentNonce;
 
-    error DirectSwapsNotAllowed();
-    error DirectLiquidityNotAllowed();
     error NotOracle();
     error MarketAlreadyResolved();
-    error NotOracleOrCreator();
     error MarketNotResolved();
-    error NoTokensToClaim();
     error AlreadyClaimed();
 
     event PoolCreated(PoolId poolId);
     event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
 
-    constructor(IPoolManager _poolManager, PoolModifyLiquidityTest _posm, PoolCreationHelper _poolCreationHelper)
+    constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper)
         BaseHook(_poolManager)
     {
         poolm = IPoolManager(_poolManager);
-        posm = PoolModifyLiquidityTest(_posm);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
     }
 

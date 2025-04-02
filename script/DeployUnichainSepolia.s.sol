@@ -32,8 +32,6 @@ contract DeployPredictionMarket is Script {
         console.log("PoolManager at", address(manager));
 
         // Deploy test routers
-        modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
-        console.log("Deployed PoolModifyLiquidityTest at", address(modifyLiquidityRouter));
         poolSwapTest = new PoolSwapTest(manager);
         console.log("Deployed PoolSwapTest at", address(poolSwapTest));
 
@@ -52,13 +50,13 @@ contract DeployPredictionMarket is Script {
             CREATE2_DEPLOYER,
             flags,
             type(PredictionMarketHook).creationCode,
-            abi.encode(manager, modifyLiquidityRouter, poolCreationHelper)
+            abi.encode(manager, poolCreationHelper)
         );
 
         console.log("Deploying PredictionMarketHook at", hookAddress);
 
         vm.startBroadcast(deployerPrivateKey);
-        hook = new PredictionMarketHook{salt: salt}(manager, modifyLiquidityRouter, poolCreationHelper);
+        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
         vm.stopBroadcast();

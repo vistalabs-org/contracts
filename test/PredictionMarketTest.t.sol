@@ -62,7 +62,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Deploy the hook using foundry cheatcode with specific flags
         deployCodeTo(
             "PredictionMarketHook.sol:PredictionMarketHook",
-            abi.encode(manager, poolModifyLiquidityTest, poolCreationHelper),
+            abi.encode(manager, poolCreationHelper),
             flags
         );
 
