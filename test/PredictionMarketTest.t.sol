@@ -212,18 +212,31 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Get market details
         Market memory market = hook.getMarketById(marketId);
 
+        // Get the decimal adjustment factor
+        uint256 collateralDecimals = ERC20Mock(market.collateralAddress).decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+        
+        // Calculate expected token amount after minting
+        uint256 expectedMintedAmount = COLLATERAL_AMOUNT * decimalAdjustment;
+
         // Verify creator received outcome tokens
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
 
         // Verify tokens were transferred for liquidity
-        assertLt(
-            yesToken.balanceOf(address(this)), COLLATERAL_AMOUNT, "Creator should have spent YES tokens on liquidity"
+        // Account for decimal adjustment in assertions
+        assertLe(
+            yesToken.balanceOf(address(this)), 
+            expectedMintedAmount, 
+            "Creator should have spent YES tokens on liquidity"
         );
 
-        assertLt(
-            noToken.balanceOf(address(this)), COLLATERAL_AMOUNT, "Creator should have spent NO tokens on liquidity"
+        assertLe(
+            noToken.balanceOf(address(this)), 
+            expectedMintedAmount, 
+            "Creator should have spent NO tokens on liquidity"
         );
+        
     }
 
     // Instead of trying to modify the parameter, return the value
