@@ -519,8 +519,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 priceNoInCollateral = calculatePrice(sqrtPriceX96No, true);
         
         // Log the prices
-        console.log("YES token price in USDC: ", priceYesInCollateral / 1e6);
-        console.log("NO token price in USDC: ", priceNoInCollateral / 1e6);
+        console.log("YES token price in USDC: ", priceYesInCollateral );
+        console.log("NO token price in USDC: ", priceNoInCollateral );
         
         // Check that prices are close to 0.5 USDC (with some tolerance for rounding)
         assertApproxEqRel(priceYesInCollateral, 0.5 * 1e6, 0.05e18); // 5% tolerance
