@@ -231,6 +231,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Take collateral from the user
         IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
 
+        // update total collateral in the market
+        market.totalCollateral += collateralAmount;
+
         // Calculate token amount to mint (adjusting for decimal differences)
         uint256 tokenAmount = collateralAmount * decimalAdjustment;
 
