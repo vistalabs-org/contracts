@@ -22,10 +22,9 @@ import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
-
 // Create a deployer contract that uses the Create2 library
 
-contract DeployLiquidity is Script {
+contract SwapTest is Script {
     PredictionMarketHook public hook;
     PoolManager public manager;
     PoolModifyLiquidityTest public modifyLiquidityRouter;
@@ -40,8 +39,9 @@ contract DeployLiquidity is Script {
         vm.startBroadcast(deployerPrivateKey);
         // using already deployed hook and manager
         hook = PredictionMarketHook(0xABF6985E92fC0d4A8F7b8ceC535aD0215DbD0a80);
+        // from uni v4 docs
         manager = PoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
-        modifyLiquidityRouter = PoolModifyLiquidityTest(0x64D6ee06A8Ece25F5588ffbB066B5C64c878AedE);
+        modifyLiquidityRouter = PoolModifyLiquidityTest(0x5fa728c0a5cfd51bee4b060773f50554c0c8a7ab);
         
         // create markets
         createMarkets();
