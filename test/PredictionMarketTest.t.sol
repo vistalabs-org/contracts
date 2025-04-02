@@ -478,10 +478,15 @@ contract PredictionMarketHookTest is Test, Deployers {
         collateralToken.approve(address(hook), type(uint256).max); // Approve hook to spend tokens
 
         bytes32 market1Id = createTestMarket();
+        console.log("market1Id: %s", uint256(market1Id));
         bytes32 market2Id = createTestMarket();
+        console.log("market2Id: %s", uint256(market2Id));
         bytes32 market3Id = createTestMarket();
+        console.log("market3Id: %s", uint256(market3Id));
         bytes32 market4Id = createTestMarket();
+        console.log("market4Id: %s", uint256(market4Id));
         bytes32 market5Id = createTestMarket();
+        console.log("market5Id: %s", uint256(market5Id));
 
         // Test getting all markets
         Market[] memory allMarkets = hook.getAllMarkets();

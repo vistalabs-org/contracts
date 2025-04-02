@@ -52,6 +52,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Array to store all market IDs
     bytes32[] private _allMarketIds;
 
+    // Add a nonce counter as a state variable
+    uint256 private _tokenDeploymentNonce;
+
     error DirectSwapsNotAllowed();
     error DirectLiquidityNotAllowed();
     error NotOracle();
@@ -145,46 +148,70 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
     //////////////////////////
     function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
-        // Create YES and NO tokens
-        console.log("Creating YES and NO tokens");
-        OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
-        OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
-
-        // Determine token order based on addresses
-        console.log("Determining token order based on addresses");
-        bool collateralIsToken0 = params.collateralAddress < address(yesToken);
-        console.log("YES pool token0: %s", collateralIsToken0 ? params.collateralAddress : address(yesToken));
-
-        // Create YES pool key
-        console.log("Creating YES pool key");
+        // Generate a unique market ID first
+        bytes32 marketId = keccak256(abi.encodePacked(
+            params.creator,
+            params.title,
+            params.description,
+            block.timestamp
+        ));
+        
+        // Use the marketId in the salt to ensure uniqueness
+        bytes32 yesSalt = keccak256(abi.encodePacked(
+            "YES_TOKEN", 
+            marketId, 
+            params.collateralAddress, 
+            _tokenDeploymentNonce++
+        ));
+        bytes32 noSalt = keccak256(abi.encodePacked(
+            "NO_TOKEN", 
+            marketId, 
+            params.collateralAddress, 
+            _tokenDeploymentNonce++));
+        
+        // Create tokens with CREATE2 to get deterministic addresses
+        OutcomeToken yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        OutcomeToken noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
+        
+        // Force correct ordering if needed
+        address collateral = params.collateralAddress;
+        if (collateral > address(yesToken)) {
+            // Deploy again with modified salt to get higher address
+            yesSalt = keccak256(abi.encodePacked("YES_TOKEN_HIGHER", marketId, params.collateralAddress));
+            yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        }
+        
+        if (collateral > address(noToken)) {
+            // Deploy again with modified salt to get higher address
+            noSalt = keccak256(abi.encodePacked("NO_TOKEN_HIGHER", marketId, params.collateralAddress));
+            noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
+        }
+        
+        // Verify correct ordering
+        assert(collateral < address(yesToken));
+        assert(collateral < address(noToken));
+        
+        // Create pool keys with guaranteed ordering
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralIsToken0 ? params.collateralAddress : address(yesToken)),
-            currency1: Currency.wrap(collateralIsToken0 ? address(yesToken) : params.collateralAddress),
+            currency0: Currency.wrap(collateral),
+            currency1: Currency.wrap(address(yesToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-
-        bool collateralIsToken0No = params.collateralAddress < address(noToken);
-        console.log("NO pool token0: %s", collateralIsToken0No ? params.collateralAddress : address(noToken));
-        // Create NO pool key
-        console.log("Creating NO pool key");
+        
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralIsToken0No ? params.collateralAddress : address(noToken)),
-            currency1: Currency.wrap(collateralIsToken0No ? address(noToken) : params.collateralAddress),
+            currency0: Currency.wrap(collateral),
+            currency1: Currency.wrap(address(noToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-
+        
         // Create both pools
         console.log("Creating both pools");
-        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, collateralIsToken0);
-        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, collateralIsToken0No);
-
-        // Create market ID from both pool keys
-        console.log("Creating market ID from both pool keys");
-        bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), noPoolKey.toId()));
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, collateral < address(yesToken));
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, collateral < address(noToken));
 
         // Store market info
         console.log("Storing market info");
