@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
-
-// Remove EigenLayer imports
-// import {ECDSAServiceManagerBase} from "@eigenlayer-middleware/src/unaudited/ECDSAServiceManagerBase.sol";
-// import {ECDSAStakeRegistry} from "@eigenlayer-middleware/src/unaudited/ECDSAStakeRegistry.sol";
-// import {IServiceManager} from "@eigenlayer-middleware/src/interfaces/IServiceManager.sol";
-
-// Add OwnableUpgradeable import
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
@@ -15,7 +8,6 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title Primary entrypoint for procuring services from AI Oracle with multi-agent consensus.
  * @dev intial version
  */
-// Remove ECDSAServiceManagerBase inheritance, add OwnableUpgradeable
 contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
     uint32 public latestTaskNum;
     
@@ -48,28 +40,12 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
 
     // We're using the events from the interface
 
-    mapping(address => bool) public testOperators; // Keep testOperators for now, might be useful
-
-    // Remove onlyOperator modifier as it relied on EigenLayer
-    /*
-    modifier onlyOperator() {
-        require(
-            ECDSAStakeRegistry(stakeRegistry).operatorRegistered(msg.sender),
-            "Operator must be the caller"
-        );
-        _;
-    }
-    */
-
-    // Update constructor: Remove EigenLayer params and base constructor call
+    mapping(address => bool) public testOperators;
     constructor() {
-        // ECDSAServiceManagerBase constructor call removed
     }
 
-    // Update initializer: Remove EigenLayer base init, add Ownable init
     function initialize(
         address initialOwner,
-        // address _rewardsInitiator, // Remove if not needed without EigenLayer rewards
         uint256 _minimumResponses,
         uint256 _consensusThreshold
     ) external initializer {
@@ -82,36 +58,6 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
         consensusThreshold = _consensusThreshold;
         require(_consensusThreshold <= 10000, "Threshold cannot exceed 100%"); // Add check here
     }
-
-    // Remove functions previously needed for IServiceManager interface
-    /*
-    function addPendingAdmin(
-        address admin
-    ) external onlyOwner {}
-
-    function removePendingAdmin(
-        address pendingAdmin
-    ) external onlyOwner {}
-
-    function removeAdmin(
-        address admin
-    ) external onlyOwner {}
-
-    function setAppointee(address appointee, address target, bytes4 selector) external onlyOwner {}
-
-    function removeAppointee(
-        address appointee,
-        address target,
-        bytes4 selector
-    ) external onlyOwner {}
-
-    function deregisterOperatorFromOperatorSets(
-        address operator,
-        uint32[] memory operatorSetIds
-    ) external {
-        // unused
-    }
-    */
 
     /**
      * @notice Add an authorized operator address
