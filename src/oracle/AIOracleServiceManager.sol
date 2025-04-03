@@ -50,7 +50,7 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
         uint256 _consensusThreshold
     ) external initializer {
         // Initialize Ownable
-        __Ownable_init(initialOwner);
+        __Ownable_init();
         // __ServiceManagerBase_init removed
 
         // Configure consensus parameters

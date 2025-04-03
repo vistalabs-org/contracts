@@ -53,7 +53,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
         string memory _symbol
     ) external initializer {
         __ERC721_init(_name, _symbol);
-        __Ownable_init(_initialOwner);
+        __Ownable_init();
         
         require(_serviceManager != address(0), "Invalid service manager address");
         serviceManager = IAIOracleServiceManager(_serviceManager);

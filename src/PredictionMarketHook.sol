@@ -47,6 +47,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Add a nonce counter as a state variable
     uint256 private _tokenDeploymentNonce;
 
+    // Add a dedicated market nonce
+    uint256 private _marketNonce;
+
     error NotOracle();
     error MarketAlreadyResolved();
     error MarketNotResolved();
@@ -135,48 +138,65 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
     //////////////////////////
     function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
-        // Generate a unique market ID first
+        // Generate a truly unique market ID
         bytes32 marketId = keccak256(abi.encodePacked(
             params.creator,
             params.title,
             params.description,
-            block.timestamp
+            block.timestamp,
+            _marketNonce++,
+            msg.sender,
+            block.number
         ));
         
-        // Use the marketId in the salt to ensure uniqueness
-        bytes32 yesSalt = keccak256(abi.encodePacked(
-            "YES_TOKEN", 
-            marketId, 
-            params.collateralAddress, 
-            _tokenDeploymentNonce++
-        ));
-        bytes32 noSalt = keccak256(abi.encodePacked(
-            "NO_TOKEN", 
-            marketId, 
-            params.collateralAddress, 
-            _tokenDeploymentNonce++));
-        
-        // Create tokens with CREATE2 to get deterministic addresses
-        OutcomeToken yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
-        OutcomeToken noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
-        
-        // Force correct ordering if needed
         address collateral = params.collateralAddress;
-        if (collateral > address(yesToken)) {
-            // Deploy again with modified salt to get higher address
-            yesSalt = keccak256(abi.encodePacked("YES_TOKEN_HIGHER", marketId, params.collateralAddress));
-            yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        OutcomeToken yesToken;
+        OutcomeToken noToken;
+        
+        // Keep trying different salts until we get tokens with higher addresses than collateral
+        uint256 attempts = 0;
+        bool validTokens = false;
+        
+        while (!validTokens && attempts < 10) {
+            // Generate unique salts for each attempt
+            bytes32 yesSalt = keccak256(abi.encodePacked(
+                "YES_TOKEN", 
+                marketId, 
+                attempts,
+                block.timestamp,
+                _tokenDeploymentNonce++
+            ));
+            
+            bytes32 noSalt = keccak256(abi.encodePacked(
+                "NO_TOKEN", 
+                marketId, 
+                attempts,
+                block.timestamp,
+                _tokenDeploymentNonce++
+            ));
+            
+            // Deploy tokens with CREATE2
+            yesToken = new OutcomeToken{salt: yesSalt}(
+                string(abi.encodePacked("Market YES ", params.title)), 
+                string(abi.encodePacked("YES", _tokenDeploymentNonce))
+            );
+            
+            noToken = new OutcomeToken{salt: noSalt}(
+                string(abi.encodePacked("Market NO ", params.title)), 
+                string(abi.encodePacked("NO", _tokenDeploymentNonce))
+            );
+            
+            // Check if both tokens have higher addresses than collateral
+            if (collateral < address(yesToken) && collateral < address(noToken)) {
+                validTokens = true;
+            } else {
+                // If not valid, increment attempts and try again
+                attempts++;
+            }
         }
         
-        if (collateral > address(noToken)) {
-            // Deploy again with modified salt to get higher address
-            noSalt = keccak256(abi.encodePacked("NO_TOKEN_HIGHER", marketId, params.collateralAddress));
-            noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
-        }
-        
-        // Verify correct ordering
-        assert(collateral < address(yesToken));
-        assert(collateral < address(noToken));
+        // If we couldn't get valid tokens after multiple attempts, revert
+        require(validTokens, "Failed to create tokens with correct address ordering");
         
         // Create pool keys with guaranteed ordering
         PoolKey memory yesPoolKey = PoolKey({
@@ -196,10 +216,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         });
         
         // Create both pools
-        console.log("Creating both pools");
-        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, collateral < address(yesToken));
-        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, collateral < address(noToken));
-
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, true);
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, true);
+        
         // Store market info
         console.log("Storing market info");
         _markets[marketId] = Market({
