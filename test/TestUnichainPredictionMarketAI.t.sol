@@ -209,13 +209,7 @@ contract TestUnichainPredictionMarketAI is Test {
         address allocationManager = deployer;
         
         // Deploy Oracle
-        oracle = new AIOracleServiceManager(
-            avsDirectory,
-            stakeRegistry,
-            rewardsCoordinator,
-            delegationManager,
-            allocationManager
-        );
+        oracle = new AIOracleServiceManager();
         console.log("AIOracleServiceManager deployed at:", address(oracle));
         
         // Deploy Registry with the oracle address
@@ -223,11 +217,7 @@ contract TestUnichainPredictionMarketAI is Test {
         console.log("AIAgentRegistry deployed at:", address(registry));
         
         // Deploy Agent
-        agent = new AIAgent(
-            address(oracle),
-            "OpenAI",
-            "gpt-4-turbo"
-        );
+        agent = new AIAgent();
         console.log("AIAgent deployed at:", address(agent));
         
         // Register the agent in the registry

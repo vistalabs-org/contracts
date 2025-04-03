@@ -131,13 +131,7 @@ contract DeployLocal is Script {
             oracle = AIOracleServiceManager(ORACLE_ADDRESS);
         } else {
             // For first deployment, deploy the Oracle the normal way
-            oracle = new AIOracleServiceManager(
-                avsDirectory,
-                stakeRegistry,
-                rewardsCoordinator,
-                delegationManager,
-                allocationManager
-            );
+            oracle = new AIOracleServiceManager();
             
             // Verify the address isn't what we expected - only on first run
             if (address(oracle) != ORACLE_ADDRESS) {
@@ -175,11 +169,7 @@ contract DeployLocal is Script {
             agent = AIAgent(AGENT_ADDRESS);
         } else {
             // Deploy AIAgent for testing (with 3 parameters)
-            agent = new AIAgent(
-                oracleAddress,       // Service manager address (use new oracle address)
-                "OpenAI",            // Model type
-                "gpt-4-turbo"        // Model version
-            );
+            agent = new AIAgent();
             console.log("AIAgent deployed at:", address(agent));
             
             // Try to register the agent in the registry if it's not already registered

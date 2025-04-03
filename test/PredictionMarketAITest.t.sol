@@ -179,7 +179,7 @@ contract PredictionMarketAITest is Test, Deployers {
                 console.log("Authorized AGENT_ADDRESS as test operator in AIOracleServiceManager.");
             } catch Error(string memory reason) {
                 // Check if already authorized (simple check, might need refinement)
-                if (oracle.testOperators(AGENT_ADDRESS())) {
+                if (oracle.testOperators(AGENT_ADDRESS)) {
                      console.log("Agent already authorized as test operator.");
                 } else {
                      console.log("Failed to add test operator:", reason);
@@ -286,15 +286,21 @@ contract PredictionMarketAITest is Test, Deployers {
 
         // Define market parameters
         CreateMarketParams memory params;
-        params.collateralToken = Currency.wrap(address(collateralToken));
-        params.marketName = "Test Market: AI Future";
-        params.resolver = address(this); // Use test contract as resolver for simplicity
-        params.hookAddress = address(hook);
-        params.initialLiquidity = 1 ether; // Example initial liquidity
-        
-        // Create the market using the helper
-        bytes32 newMarketId = poolCreationHelper.createMarket(params);
-        
+        params.collateralAddress = address(collateralToken);
+        params.collateralAmount = COLLATERAL_AMOUNT; // Use the constant defined in the test
+        params.title = "Test Market: AI Future"; // Use title field
+        params.description = "Will AI replace developers by 2030?"; // Add description
+        params.creator = address(this);
+        params.oracle = address(oracle); // Assign the oracle address
+        params.duration = 7 days; // Example duration (needs to be defined or calculated)
+        params.curveId = 0; // Example curve ID
+
+        // Create the market using the helper - This function needs to be checked
+        // Assuming the hook has a function to create the market directly now.
+        // Let's call the hook's create function if poolCreationHelper.createMarket is removed
+        // bytes32 newMarketId = poolCreationHelper.createMarket(params);
+        bytes32 newMarketId = hook.createMarketAndDepositCollateral(params);
+
         console.log("Market creation initiated.");
         console.log("Assigned Market ID:", bytes32ToString(newMarketId));
         
@@ -316,9 +322,6 @@ contract PredictionMarketAITest is Test, Deployers {
         // hook.resolveMarket(_marketId, outcome); 
         console.log("Market resolution called (placeholder)", bytes32ToString(_marketId), outcome);
     }
-
-    // Fallback function to receive Ether
-    receive() external payable {}
 
     // TODO: Add tests for:
     // - Agent responding to task (processTask)

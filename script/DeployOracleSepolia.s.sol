@@ -43,13 +43,7 @@ contract DeployOracleSepolia is Script {
         console.log("Deployer address:", deployer);
         
         // Deploy Oracle with a try/catch to detect errors
-        try new AIOracleServiceManager(
-            avsDirectory,
-            stakeRegistry,
-            rewardsCoordinator,
-            delegationManager,
-            allocationManager
-        ) returns (AIOracleServiceManager oracleContract) {
+        try new AIOracleServiceManager() returns (AIOracleServiceManager oracleContract) {
             // Add this right after deploying the oracle
             // Create a proxy for proper initialization
             TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
@@ -94,11 +88,7 @@ contract DeployOracleSepolia is Script {
                 registry = address(registryContract);
                 console.log("AIAgentRegistry deployed at:", registry);
                 
-                try new AIAgent(
-                    oracle,
-                    "google",
-                    "gemma-3-27b-it:free"
-                ) returns (AIAgent agentContract) {
+                try new AIAgent() returns (AIAgent agentContract) {
                     agent = address(agentContract);
                     console.log("AIAgent deployed at:", agent);
                     
