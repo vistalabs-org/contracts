@@ -6,9 +6,9 @@
 |----------|---------|
 | PoolManager | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
 | PoolModifyLiquidityTest | `0x64D6ee06A8Ece25F5588ffbB066B5C64c878AedE` |
-| PoolSwapTest | `0x724478Cd2CD54162Ad4e98213c854e11608058D5` |
-| PoolCreationHelper | `0x838A7931B69F3FA42A96f51C92F9b25178bb676d` |
-| PredictionMarketHook | `0xABF6985E92fC0d4A8F7b8ceC535aD0215DbD0a80` |
+| PoolSwapTest | `0xf7E9C016a23b05700FDF36caB39F64065F20Cdfd` |
+| PoolCreationHelper | `0xC07BEE42ea57Afd89ca5eF7307bd6a630391d3A0` |
+| PredictionMarketHook | `0x312D3B8A8aa25186F53ECb939Bdce6F5B403c880` |
 
 ## Overview
 
@@ -54,7 +54,7 @@ forge test
 forge script script/DeployUnichainSepolia.s.sol:DeployPredictionMarket --rpc-url sepolia --broadcast -vvvv
 
 # Create test markets and add liquidity
-forge script script/DeployTestMarketsAndAddLiquidity.s.sol:DeployLiquidity --rpc-url sepolia --broadcast -vvvv
+forge script script/DeployTestMarketsAndAddLiquidity.s.sol:SwapTest --rpc-url sepolia --broadcast -vvvv
 ```
 
 ## Frontend
@@ -71,12 +71,8 @@ Visit `http://localhost:3000` to access the application.
 
 # Known errors
 
-eigenlayer library 
+## EigenLayer Library Version Fix
+The EigenLayer middleware library uses a Solidity version that might not be available. Fix with:
 ```bash
 find lib/eigenlayer-middleware -name "*.sol" -exec sed -i 's/pragma solidity \^0.8.27/pragma solidity ^0.8.26/g' {} \;
-```
-
-import adjustments
-```solidity
-import "lib/solmate/src/utils/FixedPointMathLib.sol";
 ```

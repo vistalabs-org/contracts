@@ -54,6 +54,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     error MarketAlreadyResolved();
     error MarketNotResolved();
     error AlreadyClaimed();
+    error MarketNotActive();
+    error InvalidTickRange();
 
     event PoolCreated(PoolId poolId);
     event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
@@ -99,7 +101,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         Market memory market = _getMarketFromPoolId(poolId);
 
         // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
+        if(market.state != MarketState.Active) {
+            revert MarketNotActive();
+        }
 
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
@@ -115,7 +119,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         Market memory market = _getMarketFromPoolId(poolId);
 
         // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
+        if(market.state != MarketState.Active) {
+            revert MarketNotActive();
+        }
 
         // For prediction markets, we want to constrain the price between 0.01 and 0.99 USDC
         // These ticks correspond to those prices (rounded to valid tick spacing)
@@ -127,10 +133,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
 
         // Enforce position is within the valid price range for prediction markets
-        require(
-            params.tickLower >= minValidTick && params.tickUpper <= maxValidTick,
-            "Position must be within 0.01-0.99 price range"
-        );
+        if(params.tickLower < minValidTick || params.tickUpper > maxValidTick) {
+            revert InvalidTickRange();
+        }
 
         return BaseHook.beforeAddLiquidity.selector;
     }

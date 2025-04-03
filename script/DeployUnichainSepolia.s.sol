@@ -32,8 +32,8 @@ contract DeployUniswapSepolia is Script {
         console.log("PoolManager at", address(manager));
 
         // Deploy test routers
-        poolSwapTest = new PoolSwapTest(manager);
-        console.log("Deployed PoolSwapTest at", address(poolSwapTest));
+        poolSwapTest = PoolSwapTest(0x9140a78c1a137c7ff1c151ec8231272af78a99a4);
+        console.log("PoolSwapTest at", address(poolSwapTest));
 
         // Deploy PoolCreationHelper
         poolCreationHelper = new PoolCreationHelper(address(manager));
