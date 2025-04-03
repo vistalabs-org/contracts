@@ -2,13 +2,16 @@
 
 ## Deployed Contracts (Sepolia)
 
-| Contract | Address |
-|----------|---------|
-| PoolManager | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
-| PoolModifyLiquidityTest | `0x64D6ee06A8Ece25F5588ffbB066B5C64c878AedE` |
-| PoolSwapTest | `0x724478Cd2CD54162Ad4e98213c854e11608058D5` |
-| PoolCreationHelper | `0x838A7931B69F3FA42A96f51C92F9b25178bb676d` |
-| PredictionMarketHook | `0xABF6985E92fC0d4A8F7b8ceC535aD0215DbD0a80` |
+| Contract                   | Address                                      |
+|----------------------------|----------------------------------------------|
+| PoolManager                | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
+| AIAgentRegistry            | `0xb16882f567Aece69E692a82831f754eAdb10A532` |
+| AIOracleServiceManager Impl| `0x01e5116e8fDB9f0179dc13c6b0Fc863e80A74ADB` |
+| AIOracleServiceManager Proxy| `0x1a1c316af719C72c9835BE2Ff28dD95192Eb59EE` |
+| ProxyAdmin                 | `0xC312320126Be5ba73dcBfAc414999951d70E4729` |
+| AIAgent                    | `0x5bef72DA2E0CCdEd003D3dA1FfD7F73b872231f5` |
+| PoolCreationHelper         | `0x10010FDC0449C83849499A6c6d79F86CCA35589D` |
+| PredictionMarketHook       | `0xC19971AcBD52C7EaCd0248767E1D0014837CC880` |
 
 ## Overview
 

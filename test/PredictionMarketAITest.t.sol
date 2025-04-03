@@ -113,6 +113,28 @@ contract PredictionMarketAITest is Test /*, Deployers */ { // Commented Deployer
         bool agentInitialized = address(agent) != address(0) && AGENT_ADDRESS.code.length > 0;
         bool collateralInitialized = address(collateralToken) != address(0);
 
+        // ** Add the setOracleServiceManager call if hook and oracle are initialized **
+        if (hookInitialized && oracleInitialized) {
+            try hook.setOracleServiceManager(ORACLE_ADDRESS) {
+                 console.log("Called hook.setOracleServiceManager.");
+            } catch Error(string memory reason) {
+                 // Check if it was already set (might happen if test env persists state)
+                 try hook.aiOracleServiceManager() returns (address currentOracle) {
+                     if (currentOracle == ORACLE_ADDRESS) {
+                         console.log("Hook Oracle address was already set.");
+                     } else {
+                         console.log("Failed to set Oracle address on Hook:", reason);
+                     }
+                 } catch {
+                      console.log("Failed to set Oracle address on Hook and failed to read current address:", reason);
+                 }
+            } catch {
+                console.log("Unknown error calling hook.setOracleServiceManager.");
+            }
+        } else {
+             console.log("Skipping setOracleServiceManager call due to uninitialized hook or oracle.");
+        }
+
         // Authorize the agent in the Oracle Service Manager if both exist
         if (oracleInitialized && agentInitialized) {
             // Assuming setUp runs as owner or has permissions
@@ -275,64 +297,39 @@ contract PredictionMarketAITest is Test /*, Deployers */ { // Commented Deployer
 
     // --- Helper Functions ---
 
-    // Creates a *generic* task, not tied to market resolution
-    function createGenericAIOracleTask(string memory description) internal returns (uint32) {
-        console.log(" Helper: Creating Generic Oracle Task...");
-        require(address(oracle) != address(0), "Oracle not initialized for generic task creation");
-
-        uint32 taskNumBefore = oracle.latestTaskNum();
-        try oracle.createNewTask(description) returns (IAIOracleServiceManager.Task memory /*newTask*/) {
-            console.log(" Generic task created successfully.");
-            // Task number is the number *before* the increment happens inside createNewTask
-            return taskNumBefore;
-        } catch Error(string memory reason) {
-            revert(string.concat("Failed to create generic AI Oracle task: ", reason));
-        } catch {
-            revert("Unknown error creating generic AI Oracle task");
-        }
-    }
-
-    // Creates a prediction market via the hook
+    // Internal helper function to create a test market
     function createTestMarket() internal returns (bytes32) {
-        require(address(hook) != address(0), "Hook not initialized for market creation");
-        require(address(collateralToken) != address(0), "Collateral token not initialized for market creation");
-
-        console.log(" Helper: Creating Test Market...");
+        require(address(hook) != address(0), "Hook not initialized");
+        require(address(collateralToken) != address(0), "Collateral token not initialized");
+        // Note: Oracle address is now set on the hook during setUp
 
         CreateMarketParams memory params = CreateMarketParams({
+            oracle: address(oracle), // Use the connected oracle address
+            creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
-            title: "Test Market: Auto-Created",
-            description: "Created via createTestMarket helper",
-            creator: address(this),
-            oracle: address(oracle),
+            title: "Test Market: Resolve YES",
+            description: "This market should resolve to YES",
             duration: 1 days,
             curveId: 0
         });
 
-        // Approve the hook to take the *initial* collateral from this contract for *this* market
-        uint256 currentAllowance = collateralToken.allowance(address(this), address(hook));
-        if (currentAllowance < params.collateralAmount) {
-             collateralToken.approve(address(hook), params.collateralAmount);
-             console.log(" Approved hook for initial collateral:", params.collateralAmount);
-        } else {
-             console.log(" Hook already has sufficient allowance for initial collateral.");
-        }
-
-        bytes32 newMarketId;
-        try hook.createMarketAndDepositCollateral(params) returns (bytes32 marketId) {
-             newMarketId = marketId;
-             console.log(" Market creation call successful. Assigned ID (hex): %s", vm.toString(newMarketId));
-        } catch Error(string memory reason) {
-             revert(string.concat("Market creation failed in hook: ", reason));
-        } catch {
-             revert("Unknown error creating market via hook");
-        }
-        require(newMarketId != bytes32(0), "Hook returned zero market ID");
-        return newMarketId;
+        console.log("Attempting to create market via hook...");
+        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
+        console.log("createMarketAndDepositCollateral returned market ID (hex):", vm.toString(marketId));
+        require(marketId != bytes32(0), "Market creation returned zero ID");
+        return marketId;
     }
 
-    // Removed bytes32ToString and other helpers
+    // Internal helper function to create a generic task
+    function createGenericAIOracleTask(string memory name) internal returns (uint32) {
+        require(address(oracle) != address(0), "Oracle not initialized");
+        console.log("Attempting to create generic AI task...");
+        // Get the task index *before* calling createNewTask, as latestTaskNum increments inside
+        uint32 taskIndex = oracle.latestTaskNum();
+        oracle.createNewTask(name); // Call the function (we don't need its Task struct return value here)
+        return taskIndex; // Return the index
+    }
 
     // Manual resolution placeholder (use Oracle interaction instead for proper tests)
     function resolveMarketManually(bytes32 _marketId, bool outcome) external {

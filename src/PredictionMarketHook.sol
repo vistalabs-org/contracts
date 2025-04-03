@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
@@ -18,18 +19,19 @@ import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
 import {CreateMarketParams} from "./types/MarketTypes.sol";
 import {IAIOracleServiceManager} from "./interfaces/IAIOracleServiceManager.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @title PredictionMarketHook - Hook for prediction market management
 
-contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
+contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
 
     IPoolManager public poolm;
     PoolCreationHelper public poolCreationHelper;
+    
     int24 public TICK_SPACING = 100;
     // Market ID counter
     uint256 private _marketCount;
-    // mapping(uint256 => PoolId) private _marketPoolIds; // Removed as unused and conflicting with interface getter
     // Map market pools to market info
     mapping(bytes32 => Market) private _markets;
     /// @notice Mapping to track which addresses have claimed their winnings
@@ -47,24 +49,34 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Add a nonce counter as a state variable
     uint256 private _tokenDeploymentNonce;
 
-    // Store Oracle Service Manager as address
-    address public immutable aiOracleServiceManager;
+    // Store Oracle address, set post-deployment
+    address private _aiOracleServiceManagerAddress;
 
     error MarketAlreadyResolved();
     error MarketNotResolved();
     error AlreadyClaimed();
+    error InvalidOracleAddress();
 
-    // --- Events Removed (duplicates from interface) ---
-    // event PoolCreated(PoolId poolId);
-    // event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
+    // Event for Oracle Address Update
+    event OracleServiceManagerSet(address indexed newOracleAddress);
 
-    constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper, address _aiOracleServiceManager)
+    constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper, address initialOwner)
         BaseHook(_poolManager)
+        Ownable(msg.sender) // Owner initially set to CREATE2 factory (msg.sender)
     {
-        require(_aiOracleServiceManager != address(0), "Invalid Oracle Service Manager");
+        console.log("--- PredictionMarketHook Constructor START (with initialOwner) ---");
+        console.log("Received PoolManager: ", address(_poolManager));
+        console.log("Received PoolCreationHelper: ", address(_poolCreationHelper));
+        console.log("Received initialOwner: ", initialOwner);
+
         poolm = IPoolManager(_poolManager);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
-        aiOracleServiceManager = _aiOracleServiceManager; // Store address
+
+        // Transfer ownership from the CREATE2 factory to the intended owner (script deployer)
+        _transferOwnership(initialOwner);
+        console.log("Transferred ownership to: ", initialOwner);
+
+        console.log("--- PredictionMarketHook Constructor END (with initialOwner) ---");
     }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -96,9 +108,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not open for trading");
-        // Call BaseHook's implementation? Or is logic fully custom?
-        // Assuming custom logic here based on original code.
-        // If BaseHook logic is needed: return BaseHook._beforeSwap(sender, key, params, data);
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -121,9 +130,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             params.tickLower >= minValidTick && params.tickUpper <= maxValidTick,
             "Position must be within 0.01-0.99 price range"
         );
-        // Call BaseHook's implementation? Or is logic fully custom?
-        // Assuming custom logic here based on original code.
-        // If BaseHook logic is needed: return BaseHook._beforeAddLiquidity(sender, key, params, data);
         return BaseHook.beforeAddLiquidity.selector;
     }
 
@@ -204,7 +210,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
             noPoolKey: noPoolKey,
-            oracle: address(aiOracleServiceManager), // Oracle is the manager address
+            oracle: _aiOracleServiceManagerAddress,
             creator: params.creator,
             yesToken: yesToken,
             noToken: noToken,
@@ -310,8 +316,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function activateMarket(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
         require(market.state == MarketState.Created, "Market not in created state");
-        // Add permission checks if needed (e.g., only creator or admin)
-        // require(msg.sender == market.creator, "Only creator can activate");
         market.state = MarketState.Active;
         emit MarketActivated(marketId);
     }
@@ -322,8 +326,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function closeMarket(bytes32 marketId) external override { // Renamed from closeTrading
         Market storage market = _markets[marketId];
         require(market.state == MarketState.Active, "Market not active");
-        // Add permission checks (e.g., only callable by specific role or after endTimestamp)
-        // require(block.timestamp >= market.endTimestamp, "Trading period not ended");
         market.state = MarketState.Closed; // Updated state name
         emit MarketClosed(marketId);
     }
@@ -334,14 +336,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function enterResolution(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
         require(market.state == MarketState.Closed, "Market not closed"); // Check for Closed state
-        // Add permission checks (e.g., only callable by oracle)
-        // require(msg.sender == market.oracle, "Only oracle can initiate resolution");
         market.state = MarketState.InResolution;
         // Emit ResolutionStarted event
 
-        // Create task in AI Oracle Service Manager (cast address to interface)
+        // Create task in AI Oracle Service Manager
+        if (_aiOracleServiceManagerAddress == address(0)) revert InvalidOracleAddress();
         string memory taskName = string.concat("Resolve Market: ", market.title);
-        uint32 taskIndex = IAIOracleServiceManager(aiOracleServiceManager).createMarketResolutionTask(
+        // We need the IAIOracleServiceManager interface to call the function
+        uint32 taskIndex = IAIOracleServiceManager(_aiOracleServiceManagerAddress).createMarketResolutionTask(
             taskName,
             marketId,
             address(this)
@@ -350,29 +352,23 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         // Optional: Store the task index for reference
         // marketIdToOracleTaskIndex[marketId] = taskIndex; // Need to define this mapping if needed
 
-        emit ResolutionStarted(marketId, taskIndex);
+        emit ResolutionStarted(marketId, taskIndex); // Emit with actual task index
     }
 
     /// @notice Allows oracle to resolve the market with the outcome
     /// @param marketId The ID of the market
     /// @param outcome true for YES, false for NO
     function resolveMarket(bytes32 marketId, bool outcome) external override {
-        Market storage market = _markets[marketId];
-        // Check if caller is oracle
-        if (msg.sender != aiOracleServiceManager) {
-            revert MarketNotResolved();
-        }
+        // Ensure only the configured oracle can call this
+        require(msg.sender == _aiOracleServiceManagerAddress, "Only configured oracle allowed");
 
-        // Check if market is in a resolvable state (InResolution or Disputed)
+        Market storage market = _markets[marketId];
         require(
             market.state == MarketState.InResolution || market.state == MarketState.Disputed,
             "Market not in resolution or dispute phase"
         );
-
-        // Update market state and outcome
         market.state = MarketState.Resolved;
         market.outcome = outcome;
-        // Emit MarketResolved event
         emit MarketResolved(marketId, outcome, msg.sender);
     }
 
@@ -381,19 +377,17 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     function cancelMarket(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
         // Check if caller is oracle or creator
-        if (msg.sender != aiOracleServiceManager && msg.sender != market.creator) {
-            revert("Not authorized to cancel");
-        }
+        require(
+            msg.sender == _aiOracleServiceManagerAddress || msg.sender == market.creator,
+            "Not authorized to cancel"
+        );
 
         // Check if market can be cancelled (Created, Active, or Closed)
         require(
             market.state == MarketState.Created || market.state == MarketState.Active || market.state == MarketState.Closed,
             "Market cannot be cancelled in current state"
         );
-
-        // Update market state
         market.state = MarketState.Cancelled;
-        // Emit MarketCancelled event
         emit MarketCancelled(marketId);
     }
 
@@ -402,11 +396,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     /// @param marketId The ID of the market
     function disputeResolution(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-        // Can only dispute a market that is currently Resolved
         require(market.state == MarketState.Resolved, "Market not resolved");
-        // Add permission checks and dispute mechanism logic (e.g., staking collateral)
-        market.state = MarketState.Disputed; // Use Disputed state
-        // Emit MarketDisputed event
+        market.state = MarketState.Disputed;
         emit MarketDisputed(marketId);
     }
 
@@ -418,59 +409,29 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     /// @param marketId The ID of the market
     function claimWinnings(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-
-        // Check market is *Resolved*
         require(market.state == MarketState.Resolved, "Market not resolved");
-
-        // Check user hasn't already claimed
         if (_hasClaimed[marketId][msg.sender]) {
             revert AlreadyClaimed();
         }
-
-        // Determine which token is the winning token
         address winningToken;
         if (market.outcome) {
-            // YES outcome
             winningToken = address(market.yesToken);
         } else {
-            // NO outcome
             winningToken = address(market.noToken);
         }
-
-        // Get user's token balance
         uint256 tokenBalance = OutcomeToken(winningToken).balanceOf(msg.sender);
-
-        // Ensure user has tokens to claim
         require(tokenBalance > 0, "No tokens to claim");
-
-        // Calculate collateral to return (accounting for decimal differences)
-        // YES/NO tokens have 18 decimals, collateral might have different decimals
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
-
-        // Calculate claim amount
         uint256 claimAmount = tokenBalance / decimalAdjustment;
         console.log("claim amount: %s", claimAmount);
-
-        // Ensure there's enough collateral left to claim
-
         uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
         console.log("remaining collateral: %s", remainingCollateral);
         require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
-
-        // Burn the winning tokens
         OutcomeToken(winningToken).burnFrom(msg.sender, tokenBalance);
-
-        // Transfer collateral to user
         IERC20(market.collateralAddress).transfer(msg.sender, claimAmount);
-
-        // Update claimed tokens amount
         _claimedTokens[marketId] += claimAmount;
-
-        // Mark user as claimed
         _hasClaimed[marketId][msg.sender] = true;
-
-        // Emit event
         emit WinningsClaimed(marketId, msg.sender, claimAmount);
     }
 
@@ -478,39 +439,21 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     /// @param marketId The ID of the market
     function redeemCollateral(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-
-        // Check market is *Cancelled*
         require(market.state == MarketState.Cancelled, "Market not cancelled");
-
-        // Get user's balance of YES and NO tokens
         uint256 yesBalance = market.yesToken.balanceOf(msg.sender);
         uint256 noBalance = market.noToken.balanceOf(msg.sender);
-
-        // Total tokens represent the user's share of the original collateral
         uint256 totalTokens = yesBalance + noBalance;
         require(totalTokens > 0, "No tokens to redeem");
-
-        // Calculate collateral to return (accounting for decimal differences)
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 redeemAmount = totalTokens / decimalAdjustment;
-
-        // Burn YES and NO tokens
         if (yesBalance > 0) {
             market.yesToken.burnFrom(msg.sender, yesBalance);
         }
         if (noBalance > 0) {
             market.noToken.burnFrom(msg.sender, noBalance);
         }
-
-        // Transfer collateral back to user
         IERC20(market.collateralAddress).transfer(msg.sender, redeemAmount);
-
-        // Mark user as redeemed (optional, depending on if multiple redemptions are possible)
-        // _hasRedeemed[marketId][msg.sender] = true;
-
-        // Emit event
-        // emit CollateralRedeemed(marketId, msg.sender, redeemAmount);
     }
 
     // Implement getters manually
@@ -535,19 +478,30 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
     function getMarketById(bytes32 marketId) external view override returns (Market memory) {
         require(marketId != bytes32(0), "Market ID cannot be zero"); // Add basic check
-        // Add check if market actually exists? Optional, depends on desired behavior for invalid IDs
-        // require(_markets[marketId].creator != address(0), "Market not found");
         return _markets[marketId];
     }
 
     function mintOutcomeTokensForCreator(bytes32 marketId, uint256 collateralAmount) internal {
         Market storage market = _markets[marketId];
-
         uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 tokenAmount = collateralAmount * decimalAdjustment;
-
         market.yesToken.mint(market.creator, tokenAmount);
         market.noToken.mint(market.creator, tokenAmount);
+    }
+    
+    /// @notice Sets or updates the address of the AI Oracle Service Manager contract.
+    /// @dev Can only be called by the owner. Emits OracleServiceManagerSet event.
+    /// @param newOracleAddress The address of the new oracle service manager.
+    function setOracleServiceManager(address newOracleAddress) external onlyOwner {
+        if (newOracleAddress == address(0)) revert InvalidOracleAddress();
+        _aiOracleServiceManagerAddress = newOracleAddress;
+        emit OracleServiceManagerSet(newOracleAddress); // Emit event
+    }
+
+    /// @notice Returns the stored address of the AI Oracle Service Manager.
+    /// @dev Required by the IPredictionMarketHook interface.
+    function aiOracleServiceManager() public view override returns (address) {
+        return _aiOracleServiceManagerAddress;
     }
 }

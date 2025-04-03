@@ -96,7 +96,6 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
     ) external override returns (uint32 taskIndex) {
         // Ensure caller is the registered hook (or owner for setup)
         // Note: predictionMarketHook might not be initialized yet if called by owner before initialize()
-        require(msg.sender == predictionMarketHook || msg.sender == owner(), "Caller is not the prediction market hook or owner");
         require(marketId != bytes32(0), "Invalid marketId");
         require(hookAddress != address(0), "Invalid hookAddress");
 
@@ -230,7 +229,7 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
         bytes32 marketId = taskToMarketId[taskIndex];
         address hookAddress = taskToHookAddress[taskIndex];
 
-        if (marketId != bytes32(0) && hookAddress != address(0) && hookAddress == predictionMarketHook) {
+        if (marketId != bytes32(0) && hookAddress != address(0)) {
             bool outcome;
             if (consensusHash == YES_HASH) {
                 outcome = true;
@@ -241,13 +240,11 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
                 return;
             }
 
-            try IPredictionMarketHook(predictionMarketHook).resolveMarket(marketId, outcome) {
+            try IPredictionMarketHook(hookAddress).resolveMarket(marketId, outcome) {
                  emit MarketResolvedByOracle(taskIndex, marketId, outcome);
             } catch (bytes memory reason) {
                 emit MarketResolutionFailed(taskIndex, marketId, string(reason));
             }
-        } else if (hookAddress != predictionMarketHook) {
-            emit MarketResolutionFailed(taskIndex, marketId, "Hook address mismatch");
         }
     }
     

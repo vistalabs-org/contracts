@@ -64,7 +64,7 @@ contract DeployUniswapSepolia is Script {
         console.log("Deploying PredictionMarketHook at", hookAddress);
 
         vm.startBroadcast(deployerPrivateKey);
-        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper, YOUR_ORACLE_PROXY_ADDRESS);
+        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
         vm.stopBroadcast();
