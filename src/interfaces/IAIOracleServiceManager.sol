@@ -10,6 +10,9 @@ interface IAIOracleServiceManager {
     
     event AgentRewarded(address indexed agent, uint32 indexed taskIndex, uint256 rewardAmount);
 
+    event MarketResolvedByOracle(uint32 indexed taskIndex, bytes32 indexed marketId, bool outcome);
+    event MarketResolutionFailed(uint32 indexed taskIndex, bytes32 indexed marketId, string reason);
+
     struct Task {
         string name;
         uint32 taskCreatedBlock;
@@ -38,6 +41,11 @@ interface IAIOracleServiceManager {
     
     function consensusResultHash(uint32 taskIndex) external view returns (bytes32);
 
+    function predictionMarketHook() external view returns (address);
+
+    function getMarketIdForTask(uint32 taskIndex) external view returns (bytes32);
+    function getHookAddressForTask(uint32 taskIndex) external view returns (address);
+
     function createNewTask(
         string memory name
     ) external returns (Task memory);
@@ -55,4 +63,12 @@ interface IAIOracleServiceManager {
     ) external;
     
     function distributeRewards(uint32 taskIndex) external;
+
+    function addTestOperator(address operator) external;
+
+    function createMarketResolutionTask(
+        string memory name,
+        bytes32 marketId,
+        address hookAddress
+    ) external returns (uint32 taskIndex);
 }

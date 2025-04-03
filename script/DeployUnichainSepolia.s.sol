@@ -23,6 +23,12 @@ contract DeployUniswapSepolia is Script {
     ERC20Mock public collateralToken;
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
 
+    // --- ADDED: Placeholder for deployed Oracle address ---
+    // TODO: Replace this with the actual deployed Oracle Proxy address
+    //       from the DeployOracleSepolia script output or deployment logs.
+    address constant YOUR_ORACLE_PROXY_ADDRESS = 0x0000000000000000000000000000000000000000; 
+    // -----------------------------------------------------
+
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
         vm.startBroadcast(deployerPrivateKey);
@@ -58,10 +64,9 @@ contract DeployUniswapSepolia is Script {
         console.log("Deploying PredictionMarketHook at", hookAddress);
 
         vm.startBroadcast(deployerPrivateKey);
-        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper);
+        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper, YOUR_ORACLE_PROXY_ADDRESS);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
         vm.stopBroadcast();
-
     }
 }

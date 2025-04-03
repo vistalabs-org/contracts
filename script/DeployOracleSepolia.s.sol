@@ -31,75 +31,79 @@ contract DeployOracleSepolia is Script {
     function deployAIOracleComponents(uint256 deployerPrivateKey) internal {
         console.log("Deploying AI Oracle components to Unichain Sepolia...");
         
-        // Use this test contract address for all AVS middleware components
-        address avsDirectory = 0x055733000064333CaDDbC92763c58BF0192fFeBf;
-        address stakeRegistry = 0xdfB5f6CE42aAA7830E94ECFCcAd411beF4d4D5b6;
-        address rewardsCoordinator = 0xAcc1fb458a1317E886dB376Fc8141540537E68fE;
-        address delegationManager = 0xA44151489861Fe9e3055d95adC98FbD462B948e7;
-        address allocationManager = 0x78469728304326CBc65f8f95FA756B0B73164462;
-        
+                
         // Get the deployer address directly
         address deployer = vm.addr(deployerPrivateKey);
         console.log("Deployer address:", deployer);
+
+        // --- Break the circular dependency between Registry and Oracle ---
         
-        // Deploy Oracle with a try/catch to detect errors
-        try new AIOracleServiceManager() returns (AIOracleServiceManager oracleContract) {
-            // Add this right after deploying the oracle
-            // Create a proxy for proper initialization
-            TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-                address(oracleContract),
-                deployer,  // admin of the proxy
-                abi.encodeWithSelector(
-                    oracleContract.initialize.selector,
-                    deployer,  // initialOwner
-                    deployer,  // rewardsInitiator
-                    1,         // minimumResponses (test mode)
-                    5100       // consensusThreshold
-                )
-            );
-
-            // Now use the proxy address instead
-            oracle = address(proxy);
-            console.log("Oracle proxy deployed at:", oracle);
+        // 1. Create a temporary placeholder address for Oracle (will be replaced with actual proxy later)
+        address tempOracleAddress = address(1); // Placeholder address
+        
+        // 2. Deploy AIAgentRegistry with the temporary Oracle address
+        try new AIAgentRegistry(tempOracleAddress) returns (AIAgentRegistry registryContract) {
+            registry = address(registryContract);
+            console.log("AIAgentRegistry deployed at:", registry);
             
-            // CREATE A NEW CONTRACT INSTANCE THAT POINTS TO THE PROXY
-            AIOracleServiceManager proxyContract = AIOracleServiceManager(oracle);
-
-            // Now call through the proxy contract
-            try proxyContract.updateConsensusParameters(1, 5100) {
-                console.log("Updated consensus parameters successfully");
-            } catch Error(string memory reason) {
-                console.log("Failed to update consensus parameters:", reason);
-            }
-            
-            // Add test operator through the proxy
-            try proxyContract.addTestOperator(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) {
-                console.log("Added test operator successfully");
-            } catch Error(string memory reason) {
-                console.log("Failed to add test operator:", reason);
-            }
-            
-            // Check current values
-            console.log("Current minimumResponses:", oracleContract.minimumResponses());
-            console.log("Test mode active:", oracleContract.minimumResponses() == 1);
-            
-            // Continue with other deployments only if Oracle deployment succeeds
-            try new AIAgentRegistry(oracle) returns (AIAgentRegistry registryContract) {
-                registry = address(registryContract);
-                console.log("AIAgentRegistry deployed at:", registry);
+            // 3. Deploy Oracle Implementation (with actual Registry address)
+            try new AIOracleServiceManager(registry) returns (AIOracleServiceManager oracleImpl) {
+                console.log("AIOracleServiceManager implementation deployed at:", address(oracleImpl));
                 
+                // 4. Create a proxy for the Oracle
+                TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
+                    address(oracleImpl), // Implementation address
+                    deployer,           // Admin of the proxy
+                    abi.encodeWithSelector(
+                        oracleImpl.initialize.selector,
+                        deployer,       // initialOwner
+                        1,              // minimumResponses (test mode)
+                        5100,           // consensusThreshold
+                        address(0)      // _predictionMarketHook (set later)
+                    )
+                );
+                
+                // 5. Store the actual Oracle proxy address
+                oracle = address(proxy);
+                console.log("Oracle proxy deployed at:", oracle);
+                
+                // 6. Update the Registry's Oracle reference
+                // We need to get direct access to functions not defined in IAIAgentRegistry
+                // If there's a setServiceManager function, call it here
+                // Otherwise, this may require a redeployment of the registry - see alternative below
+                
+                // Commented out example - adjust according to the actual function available in AIAgentRegistry:
+                // try registryContract.setServiceManager(oracle) {
+                //     console.log("Updated registry's oracle reference");
+                // } catch Error(string memory reason) {
+                //     console.log("Failed to update registry's oracle reference:", reason);
+                // }
+                
+                // IMPORTANT: If no function exists to update serviceManager, log a notice
+                console.log("NOTICE: Registry was deployed with a placeholder oracle address.");
+                console.log("Actual oracle proxy is at:", oracle);
+                console.log("The registry needs to be updated manually or redeployed.");
+                
+                // Create a contract instance of the proxy for interactions
+                AIOracleServiceManager proxyContract = AIOracleServiceManager(oracle);
+                
+                // Check test mode
+                console.log("Current minimumResponses via proxy:", proxyContract.minimumResponses());
+                console.log("Test mode active:", proxyContract.minimumResponses() == 1);
+                
+                // 7. Deploy AIAgent 
                 try new AIAgent() returns (AIAgent agentContract) {
                     agent = address(agentContract);
                     console.log("AIAgent deployed at:", agent);
                     
-                    // Register the agent in the registry
-                    try AIAgentRegistry(registry).registerAgent(agent) {
+                    // 8. Try to register the agent in the registry
+                    try registryContract.registerAgent(agent) {
                         console.log("Agent registered in registry");
                         
-                        // Create an initial test task
-                        try AIOracleServiceManager(oracle).createNewTask("Initial Oracle Test Task") {
+                        // 9. Try to create a test task
+                        try proxyContract.createNewTask("Initial Oracle Test Task") {
                             console.log("Created initial test task successfully");
-                            uint32 taskNum = AIOracleServiceManager(oracle).latestTaskNum();
+                            uint32 taskNum = proxyContract.latestTaskNum();
                             console.log("Latest task number:", taskNum);
                         } catch Error(string memory reason) {
                             console.log("Failed to create initial task:", reason);
@@ -111,13 +115,19 @@ contract DeployOracleSepolia is Script {
                     console.log("Failed to deploy AIAgent:", reason);
                 }
             } catch Error(string memory reason) {
-                console.log("Failed to deploy AIAgentRegistry:", reason);
+                console.log("Failed to deploy AIOracleServiceManager implementation:", reason);
+            } catch (bytes memory) {
+                console.log("Unknown error during Oracle implementation deployment");
             }
         } catch Error(string memory reason) {
-            console.log("Failed to deploy AIOracleServiceManager:", reason);
+            console.log("Failed to deploy AIAgentRegistry:", reason);
         } catch (bytes memory) {
-            console.log("Unknown error during Oracle deployment");
+            console.log("Unknown error during Registry deployment");
         }
+        
+        // --- Alternative approach if needed: Registry Redeployment ---
+        // If the registry cannot be updated after initialization, include code 
+        // here to redeploy it with the correct Oracle address
     }
     
     function logAIOracleAddresses() internal view {

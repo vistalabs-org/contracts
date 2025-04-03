@@ -25,6 +25,8 @@ import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
+import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
+import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
 
 contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -33,6 +35,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     PredictionMarketHook public hook;
     PoolCreationHelper public poolCreationHelper;
     ERC20Mock public collateralToken;
+    AIOracleServiceManager public oracleManager;
+    AIAgentRegistry public registry;
     uint256 public COLLATERAL_AMOUNT = 100 * 1e6; // 100 USDC
     PoolSwapTest public poolSwapTest;
     PoolModifyLiquidityTest public poolModifyLiquidityTest;
@@ -53,22 +57,57 @@ contract PredictionMarketHookTest is Test, Deployers {
         poolCreationHelper = new PoolCreationHelper(address(manager));
         console.log("PoolCreationHelper deployed at:", address(poolCreationHelper));
 
-        // Calculate hook address with specific flags for swap and liquidity operations
-        address flags = address(
-            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)
-                ^ (0x4444 << 144) // Namespace the hook to avoid collisions
-        );
+        // --- Deploy Oracle Manager and Registry ---
+        // Deploy Registry first with placeholder Oracle address to break cycle
+        registry = new AIAgentRegistry(address(0)); // Pass address(0) for service manager initially
+        console.log("Actual Registry deployed at:", address(registry));
 
-        // Deploy the hook using foundry cheatcode with specific flags
-        deployCodeTo(
-            "PredictionMarketHook.sol:PredictionMarketHook",
-            abi.encode(manager, poolCreationHelper),
-            flags
-        );
+        // Deploy AIOracleServiceManager implementation, passing the actual registry address
+        oracleManager = new AIOracleServiceManager(address(registry));
+        console.log("Oracle Manager implementation deployed at:", address(oracleManager));
+        // NOTE: The registry instance holds address(0) for its serviceManager
 
-        // Initialize hook instance at the deployed address
-        hook = PredictionMarketHook(flags);
-        console.log("Hook address:", address(hook));
+        // --- Deploy Hook using HookMiner and CREATE2 ---
+        // 1. Define hook flags required by PredictionMarketHook
+        uint24 hookFlags = uint24(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG);
+
+        // 2. Get creation code and *updated* constructor arguments (using actual oracle manager)
+        bytes memory hookCreationCode = type(PredictionMarketHook).creationCode;
+        // *** Use oracleManager address here ***
+        bytes memory hookConstructorArgs = abi.encode(manager, poolCreationHelper, address(oracleManager));
+
+        // 3. Calculate the deterministic hook address and salt using HookMiner
+        (address calculatedHookAddr, bytes32 salt) = HookMiner.find(
+            address(this),       // Deployer
+            hookFlags,           // Required hook flags
+            hookCreationCode,    // Contract creation code
+            hookConstructorArgs  // Constructor arguments
+        );
+        console.log("Calculated Hook address:", calculatedHookAddr);
+
+        // --- Initialize Oracle Manager ---
+        // Now that we know the calculated hook address, initialize the oracle manager
+        oracleManager.initialize(
+            address(this), // Owner
+            1,             // Minimum Responses
+            10000,         // Consensus Threshold (100%)
+            calculatedHookAddr // The address where the hook WILL be deployed
+        );
+        console.log("Oracle Manager initialized.");
+
+        // 4. Deploy the hook using CREATE2
+        bytes memory hookDeploymentCode = abi.encodePacked(hookCreationCode, hookConstructorArgs); // Combine for deployment
+        address deployedHookAddr;
+        assembly {
+            deployedHookAddr := create2(0, add(hookDeploymentCode, 0x20), mload(hookDeploymentCode), salt)
+        }
+        require(deployedHookAddr == calculatedHookAddr, "CREATE2 deployment address mismatch");
+        require(deployedHookAddr != address(0), "Hook deployment failed");
+
+        // 5. Initialize hook instance at the deployed address
+        hook = PredictionMarketHook(payable(deployedHookAddr)); // Use the actually deployed address
+        console.log("Hook address (deployed via CREATE2):", address(hook));
+        // --- End Hook Deployment ---
 
         // create and mint a collateral token
         // Deploy mock token
@@ -87,7 +126,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Modifier to create a market and return its ID
     modifier createMarket(bytes32 marketId) {
         CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(this),
+            oracle: address(oracleManager),
             creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
@@ -146,7 +185,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     modifier createMarketWithLiquidity(bytes32 marketId) {
         // Create market first
         CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(this),
+            oracle: address(oracleManager),
             creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
@@ -234,9 +273,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         Market memory market = hook.getMarketById(marketId);
 
         // Verify market details
-        assertEq(market.oracle, address(this), "Oracle address mismatch");
+        assertEq(market.oracle, address(oracleManager), "Oracle address mismatch");
         assertEq(market.creator, address(this), "Creator address mismatch");
-        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be active");
+        assertEq(uint8(market.state), uint8(MarketState.Created), "Market should be created");
         assertEq(market.totalCollateral, COLLATERAL_AMOUNT, "Collateral amount mismatch");
         assertEq(market.collateralAddress, address(collateralToken), "Collateral address mismatch");
         assertTrue(market.endTimestamp > block.timestamp, "End timestamp should be in the future");
@@ -283,7 +322,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     // Instead of trying to modify the parameter, return the value
     function createTestMarket() internal returns (bytes32) {
         CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(this),
+            oracle: address(oracleManager),
             creator: address(this),
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
@@ -300,6 +339,9 @@ contract PredictionMarketHookTest is Test, Deployers {
     function createTestMarketWithLiquidity() internal returns (bytes32) {
         // Create market first
         bytes32 marketId = createTestMarket();
+
+        // ***** ACTIVATE THE MARKET *****
+        hook.activateMarket(marketId);
 
         // Get market details
         Market memory market = hook.getMarketById(marketId);
@@ -367,9 +409,9 @@ contract PredictionMarketHookTest is Test, Deployers {
     }
 
     function test_buyYesSharesFromPool() public {
-        // Create a market with liquidity
+        // Create a market with liquidity (this also activates it)
         bytes32 marketId = createTestMarketWithLiquidity();
-        console.log("liquidity created");
+        console.log("Liquidity created and market activated for test_buyYesSharesFromPool");
 
         // Get market details
         Market memory market = hook.getMarketById(marketId);
@@ -428,28 +470,38 @@ contract PredictionMarketHookTest is Test, Deployers {
 
 
     function test_resolveAndClaim() public {
-        // Create market with liquidity
+        // Create market
         bytes32 marketId = createTestMarket();
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
         
-        // Setup user
+        // Setup user balances (initial mint happens in createTestMarket)
         collateralToken.approve(address(hook), type(uint256).max);
-        //hook.mintOutcomeTokens(marketId, 10 * 1e6);
         uint256 userCollateralBefore = collateralToken.balanceOf(address(this));
         uint256 userYesTokensBefore = yesToken.balanceOf(address(this));
-        console.log("user yes tokens before: %s", userYesTokensBefore);
+        console.log("User YES tokens before claim: %s", userYesTokensBefore);
         uint256 userNoTokensBefore = noToken.balanceOf(address(this));
-        console.log("user no tokens before: %s", userNoTokensBefore);
+        console.log("User NO tokens before claim: %s", userNoTokensBefore);
         
+        // ***** STATE TRANSITIONS *****
+        hook.activateMarket(marketId);
+        console.log("Market activated");
+        hook.closeMarket(marketId); // Close immediately for testing
+        console.log("Market closed");
+        hook.enterResolution(marketId); // Trigger oracle task creation
+        console.log("Market entered resolution");
         
-        // Oracle resolves the market as YES
-        hook.resolveMarket(marketId, true);
+        // ***** SIMULATE ORACLE RESOLUTION *****
+        vm.prank(address(oracleManager)); // Pretend to be the oracle
+        hook.resolveMarket(marketId, true); // Oracle resolves as YES
+        console.log("Market resolved by simulated oracle");
 
         // User claims winnings
-        yesToken.approve(address(hook), type(uint256).max);
+        yesToken.approve(address(hook), type(uint256).max); // Approve YES token burn
+        noToken.approve(address(hook), type(uint256).max); // Approve NO token burn (needed? Safe to add)
         hook.claimWinnings(marketId);
+        console.log("Claim winnings called");
 
         // Verify claim was successful
         uint256 userCollateralAfter = collateralToken.balanceOf(address(this));
