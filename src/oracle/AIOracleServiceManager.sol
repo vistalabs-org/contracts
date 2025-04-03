@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import {ECDSAServiceManagerBase} from "@eigenlayer-middleware/src/unaudited/ECDSAServiceManagerBase.sol";
-import {ECDSAStakeRegistry} from "@eigenlayer-middleware/src/unaudited/ECDSAStakeRegistry.sol";
-import {IServiceManager} from "@eigenlayer-middleware/src/interfaces/IServiceManager.sol";
+// Remove EigenLayer imports
+// import {ECDSAServiceManagerBase} from "@eigenlayer-middleware/src/unaudited/ECDSAServiceManagerBase.sol";
+// import {ECDSAStakeRegistry} from "@eigenlayer-middleware/src/unaudited/ECDSAStakeRegistry.sol";
+// import {IServiceManager} from "@eigenlayer-middleware/src/interfaces/IServiceManager.sol";
+
+// Add OwnableUpgradeable import
+import {OwnableUpgradeable} from "@openzeppelin-upgrades/contracts/access/OwnableUpgradeable.sol";
 import {ECDSAUpgradeable} from "@openzeppelin-upgrades/contracts/utils/cryptography/ECDSAUpgradeable.sol";
 import {IERC1271Upgradeable} from "@openzeppelin-upgrades/contracts/interfaces/IERC1271Upgradeable.sol";
 import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
@@ -14,7 +18,8 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
  * @title Primary entrypoint for procuring services from AI Oracle with multi-agent consensus.
  * @dev intial version
  */
-contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceManager {
+// Remove ECDSAServiceManagerBase inheritance, add OwnableUpgradeable
+contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
     using ECDSAUpgradeable for bytes32;
 
     uint32 public latestTaskNum;
@@ -43,10 +48,15 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
     // Mapping to temporarily store signatures for event emission
     mapping(address => mapping(uint32 => bytes)) private _tempSignatures;
 
+    // Mapping for authorized operators (replaces EigenLayer registry check)
+    mapping(address => bool) public isAuthorizedOperator;
+
     // We're using the events from the interface
 
-    mapping(address => bool) public testOperators;
+    mapping(address => bool) public testOperators; // Keep testOperators for now, might be useful
 
+    // Remove onlyOperator modifier as it relied on EigenLayer
+    /*
     modifier onlyOperator() {
         require(
             ECDSAStakeRegistry(stakeRegistry).operatorRegistered(msg.sender),
@@ -54,37 +64,32 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         );
         _;
     }
+    */
 
-    constructor(
-        address _avsDirectory,
-        address _stakeRegistry,
-        address _rewardsCoordinator,
-        address _delegationManager,
-        address _allocationManager
-    )
-        ECDSAServiceManagerBase(
-            _avsDirectory,
-            _stakeRegistry,
-            _rewardsCoordinator,
-            _delegationManager,
-            _allocationManager
-        )
-    {}
+    // Update constructor: Remove EigenLayer params and base constructor call
+    constructor() {
+        // ECDSAServiceManagerBase constructor call removed
+    }
 
+    // Update initializer: Remove EigenLayer base init, add Ownable init
     function initialize(
-        address initialOwner, 
-        address _rewardsInitiator, 
-        uint256 _minimumResponses, 
+        address initialOwner,
+        // address _rewardsInitiator, // Remove if not needed without EigenLayer rewards
+        uint256 _minimumResponses,
         uint256 _consensusThreshold
     ) external initializer {
-        __ServiceManagerBase_init(initialOwner, _rewardsInitiator);
-        
+        // Initialize Ownable
+        __Ownable_init(initialOwner);
+        // __ServiceManagerBase_init removed
+
         // Configure consensus parameters
         minimumResponses = _minimumResponses;
         consensusThreshold = _consensusThreshold;
+        require(_consensusThreshold <= 10000, "Threshold cannot exceed 100%"); // Add check here
     }
 
-    // These are just to comply with IServiceManager interface
+    // Remove functions previously needed for IServiceManager interface
+    /*
     function addPendingAdmin(
         address admin
     ) external onlyOwner {}
@@ -110,6 +115,26 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         uint32[] memory operatorSetIds
     ) external {
         // unused
+    }
+    */
+
+    /**
+     * @notice Add an authorized operator address
+     * @param operator The address to authorize
+     */
+    function addOperator(address operator) external onlyOwner {
+        require(operator != address(0), "Invalid address");
+        isAuthorizedOperator[operator] = true;
+        emit OperatorAdded(operator); // Optional: Add event
+    }
+
+    /**
+     * @notice Remove an authorized operator address
+     * @param operator The address to deauthorize
+     */
+    function removeOperator(address operator) external onlyOwner {
+        isAuthorizedOperator[operator] = false;
+        emit OperatorRemoved(operator); // Optional: Add event
     }
 
     /**
@@ -169,14 +194,13 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         uint32 referenceTaskIndex,
         bytes calldata signature
     ) external {
-        // Don't even attempt the expensive check in test mode
+        // Replace EigenLayer check with new authorized operator check
         if (isTestMode() || testOperators[msg.sender]) {
-            // Skip operator check in test mode
+            // Skip operator check in test mode or for designated test operators
         } else {
-            // Only do the expensive check if not in test mode
             require(
-                ECDSAStakeRegistry(stakeRegistry).operatorRegistered(msg.sender),
-                "Operator must be the caller"
+                isAuthorizedOperator[msg.sender],
+                "Caller is not an authorized operator"
             );
         }
         
@@ -229,7 +253,7 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
 
         // Create minimal task for event emission
         Task memory task;
-        task.taskCreatedBlock = uint32(block.number);
+        task.taskCreatedBlock = uint32(block.number); // Note: This block number is response time, not creation time
         
         // Emit event
         emit TaskResponded(referenceTaskIndex, task, msg.sender);
@@ -259,10 +283,19 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         
         // Find any responder with the consensus hash for event emission
         bytes memory consensusResponse;
-        for (uint256 i = 0; i < _taskRespondents[taskIndex].length; i++) {
-            address respondent = _taskRespondents[taskIndex][i];
+        address[] memory respondents = _taskRespondents[taskIndex]; // Cache storage reads
+        for (uint256 i = 0; i < respondents.length; i++) {
+            address respondent = respondents[i];
             if (allTaskResponseHashes[respondent][taskIndex] == consensusHash) {
-                consensusResponse = _tempSignatures[respondent][taskIndex];
+                // Try to retrieve temp signature if available (might have been deleted)
+                bytes memory sig = _tempSignatures[respondent][taskIndex];
+                if (sig.length > 0) {
+                    consensusResponse = sig;
+                     // Clean up temp storage once used for emission
+                    delete _tempSignatures[respondent][taskIndex];
+                }
+                // If not found in temp storage, we can't emit the full signature
+                // Event below will just emit empty bytes in that case.
                 break;
             }
         }
@@ -279,15 +312,21 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         bytes32 winningHash = taskConsensusResultHash[taskIndex];
         require(winningHash != bytes32(0), "No consensus result");
         
+        // Placeholder: Rewards initiator/logic needs to be defined without EigenLayer
+        // address rewardsInitiator = owner(); // Example: use owner, or define another role
+
         uint256 totalResponses = _taskRespondents[taskIndex].length;
+        address[] memory respondents = _taskRespondents[taskIndex]; // Cache storage reads
         for (uint256 i = 0; i < totalResponses; i++) {
-            address agent = _taskRespondents[taskIndex][i];
+            address agent = respondents[i];
             if (allTaskResponseHashes[agent][taskIndex] == winningHash) {
                 // This agent contributed to consensus
                 uint256 rewardAmount = calculateReward(agent, taskIndex);
                 
                 // Here you would distribute rewards using your reward system
-                
+                // This part needs implementation based on how rewards are now funded/distributed
+                // Example: IERC20(rewardToken).transfer(agent, rewardAmount);
+
                 emit AgentRewarded(agent, taskIndex, rewardAmount);
             }
         }
@@ -299,6 +338,7 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
      */
     function isTestMode() internal view returns (bool) {
         // For testing: consider any minimumResponses value of 1 as test mode
+        // Or rely on the explicit testOperators mapping
         return (minimumResponses == 1);
     }
     
@@ -306,7 +346,8 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
      * @notice Calculate reward for an agent (placeholder implementation)
      */
     function calculateReward(address /* agent */, uint32 /* taskIndex */) internal pure returns (uint256) {
-        return 1 ether;
+        // Placeholder - actual reward logic needed
+        return 1 ether; // Example reward
     }
     
     /**
@@ -348,7 +389,12 @@ contract AIOracleServiceManager is ECDSAServiceManagerBase, IAIOracleServiceMana
         return taskConsensusResultHash[taskIndex];
     }
 
+    // Keep test operator functions for now
     function addTestOperator(address operator) external onlyOwner {
         testOperators[operator] = true;
     }
+
+    // Optional: Events for operator management
+    event OperatorAdded(address indexed operator);
+    event OperatorRemoved(address indexed operator);
 }

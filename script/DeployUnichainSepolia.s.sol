@@ -28,12 +28,10 @@ contract DeployUniswapSepolia is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy Uniswap infrastructure
-        manager = new PoolManager(address(this));
-        console.log("Deployed PoolManager at", address(manager));
+        manager = PoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
+        console.log("PoolManager at", address(manager));
 
         // Deploy test routers
-        modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
-        console.log("Deployed PoolModifyLiquidityTest at", address(modifyLiquidityRouter));
         poolSwapTest = new PoolSwapTest(manager);
         console.log("Deployed PoolSwapTest at", address(poolSwapTest));
 
@@ -46,7 +44,7 @@ contract DeployUniswapSepolia is Script {
         
         // Hook mining code
         uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
         ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
 
         address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
@@ -54,13 +52,13 @@ contract DeployUniswapSepolia is Script {
             CREATE2_DEPLOYER,
             flags,
             type(PredictionMarketHook).creationCode,
-            abi.encode(manager, modifyLiquidityRouter, poolCreationHelper)
+            abi.encode(manager, poolCreationHelper)
         );
 
         console.log("Deploying PredictionMarketHook at", hookAddress);
 
         vm.startBroadcast(deployerPrivateKey);
-        hook = new PredictionMarketHook{salt: salt}(manager, modifyLiquidityRouter, poolCreationHelper);
+        hook = new PredictionMarketHook{salt: salt}(manager, poolCreationHelper);
         require(address(hook) == hookAddress, "Hook address mismatch");
         console.log("Hook deployed at", address(hook));
         vm.stopBroadcast();

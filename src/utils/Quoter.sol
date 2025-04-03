@@ -173,3 +173,4 @@ contract NormalQuoter {
         return x >= 0 ? x : -x;
     }
 }
+

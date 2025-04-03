@@ -575,3 +575,4 @@ contract PredictionMarketAMM is BaseHook, IPredictionMarketHook {
         return FixedPointMathLib.sqrt(timeRemaining * 1e18) * 1e9;
     }
 }
+

@@ -8,28 +8,7 @@ libs = ["lib"]
 remappings = [
     "@uniswap/v4-core/=lib/v4-core/",
     "@uniswap/v4-periphery/=lib/v4-periphery/",
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin-upgrades/contracts/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    "@openzeppelin/=lib/openzeppelin-contracts/",
-    "@eigenlayer-middleware/=lib/eigenlayer-middleware/",
-    "@solstat/=lib/solstat",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
 ]
 
-solc = "0.8.26"
-optimizer = true
-# optimizer_runs = 1
-# evm_version = "cancun"
-
-# Enable via-IR pipeline
-via_ir = true
-
-# # Rest of your config
-# ignored_error_codes = [8760, 5574, 1878, 2333, 9582, 2072, 5667, 3628]
-# model_checker.engine = "none"
-# fuzz.runs = 256
-fs_permissions = [{ access = "read-write", path = "./"}]
-# isolation = true
-# fork_block_number = 0
-
-# [profile.ci]
-# verbosity = 4
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

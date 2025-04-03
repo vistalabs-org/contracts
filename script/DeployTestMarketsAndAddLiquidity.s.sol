@@ -22,10 +22,9 @@ import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
-
 // Create a deployer contract that uses the Create2 library
 
-contract DeployLiquidity is Script {
+contract SwapTest is Script {
     PredictionMarketHook public hook;
     PoolManager public manager;
     PoolModifyLiquidityTest public modifyLiquidityRouter;
@@ -39,9 +38,10 @@ contract DeployLiquidity is Script {
         uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
         vm.startBroadcast(deployerPrivateKey);
         // using already deployed hook and manager
-        hook = PredictionMarketHook(0x351af7D9f5F2BeC762bEb4a5627FF29749458A80);
-        manager = PoolManager(0x461248D11dad5a36f252A29cE42A6513eAA1dB3e);
-        modifyLiquidityRouter = PoolModifyLiquidityTest(0x668E2A63703eC7929e34E7C30c491Ca91E8AAe9B);
+        hook = PredictionMarketHook(0xABF6985E92fC0d4A8F7b8ceC535aD0215DbD0a80);
+        // from uni v4 docs
+        manager = PoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
+        modifyLiquidityRouter = PoolModifyLiquidityTest(0x5fa728C0A5cfd51BEe4B060773f50554c0C8A7AB);
         
         // create markets
         createMarkets();
@@ -94,9 +94,11 @@ contract DeployLiquidity is Script {
         //console.log("Approving collateral token");
         //collateralToken.approve(address(modifyLiquidityRouter), liquidityCollateral);
         console.log("Approving yes token");
-        yesToken.approve(address(modifyLiquidityRouter), liquidityOutcomeTokens);
+        yesToken.approve(address(modifyLiquidityRouter), type(uint256).max);
         console.log("Approving no token");
-        noToken.approve(address(modifyLiquidityRouter), liquidityOutcomeTokens);
+        noToken.approve(address(modifyLiquidityRouter), type(uint256).max);
+        console.log("Approving collateral token");
+        collateralToken.approve(address(modifyLiquidityRouter), type(uint256).max);
 
         // Calculate liquidity amount
         uint128 liquidityAmount = LiquidityAmounts.getLiquidityForAmounts(
@@ -138,32 +140,36 @@ contract DeployLiquidity is Script {
 
     function createMarkets() public {
 
-        vm.startBroadcast(deployerPrivateKey);
+
 
         // Deploy mock collateral token
         collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
         console.log("Collateral token deployed at", address(collateralToken));
 
         // Mint tokens to deployer
+        uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
+
         address deployer = vm.addr(deployerPrivateKey);
         collateralToken.mint(deployer, 1e6 * 10 ** 6);
         console.log("Minted 1,000,000 USDC to deployer");
 
         // Approve hook to spend tokens
-        collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
+        collateralToken.approve(address(hook), type(uint256).max);
 
         // Create a market
+        console.log("Creating market params");
         CreateMarketParams memory params = CreateMarketParams({
             oracle: deployer,
             creator: deployer,
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
-            title: "Test market 1",
-            description: "Market resolves to YES if ETH is above 1000",
+            title: "Will the U.S. Department of Education be dismantled by December 31, 2025?",
+            description: "This market resolves to YES if the U.S. Department of Education will be dismantled by December 31, 2025.",
             duration: 30 days,
             curveId: 0
         });
 
+        console.log("calling createMarketAndDepositCollateral");
         bytes32 marketId = hook.createMarketAndDepositCollateral(params);
 
         console.log("Market created with ID:", vm.toString(marketId));
@@ -174,8 +180,8 @@ contract DeployLiquidity is Script {
             creator: deployer,
             collateralAddress: address(collateralToken),
             collateralAmount: COLLATERAL_AMOUNT,
-            title: "Test market 2",
-            description: "Market resolves to YES if BTC is above 80000s",
+            title: "Will the U.S. acquire greenland by December 31, 2025?",
+            description: "Market resolves to YES if the U.S. acquires Greenland by December 31, 2025.",
             duration: 30 days,
             curveId: 0
         });
@@ -184,6 +190,6 @@ contract DeployLiquidity is Script {
 
         console.log("Market created with ID:", vm.toString(marketId2));
 
-        vm.stopBroadcast();
     }
+
 }

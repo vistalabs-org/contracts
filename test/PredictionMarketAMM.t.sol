@@ -499,3 +499,4 @@ contract PredictionMarketHookTest is Test, Deployers {
         console.log("Final Time remaining sqrt:", hook.getTimeRemainingSqrt(marketId));
     }
 }
+

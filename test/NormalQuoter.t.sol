@@ -51,3 +51,4 @@ contract NormalQuoterTest is Test {
         assertTrue(reserve1after < reserve1, "Reserve1 should decrease when reserve0 increases");
     }
 }
+

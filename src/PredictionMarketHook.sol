@@ -5,24 +5,17 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {FixedPointMathLib} from "@uniswap/v4-core/lib/solmate/src/utils/FixedPointMathLib.sol";
-import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Market, MarketState} from "./types/MarketTypes.sol";
 import {OutcomeToken} from "./OutcomeToken.sol";
 import {console} from "forge-std/console.sol";
-import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
-import {V4Quoter} from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
-import {IV4Quoter} from "@uniswap/v4-periphery/src/interfaces/IV4Quoter.sol";
-import {QuoterRevert} from "@uniswap/v4-periphery/src/libraries/QuoterRevert.sol";
 import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
-import {Market} from "./types/MarketTypes.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
 import {CreateMarketParams} from "./types/MarketTypes.sol";
 /// @title PredictionMarketHook - Hook for prediction market management
@@ -32,7 +25,6 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     using FixedPointMathLib for uint160;
 
     IPoolManager public poolm;
-    PoolModifyLiquidityTest public posm;
     PoolCreationHelper public poolCreationHelper;
     int24 public TICK_SPACING = 100;
     // Market ID counter
@@ -52,23 +44,21 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
     // Array to store all market IDs
     bytes32[] private _allMarketIds;
 
-    error DirectSwapsNotAllowed();
-    error DirectLiquidityNotAllowed();
+    // Add a nonce counter as a state variable
+    uint256 private _tokenDeploymentNonce;
+
     error NotOracle();
     error MarketAlreadyResolved();
-    error NotOracleOrCreator();
     error MarketNotResolved();
-    error NoTokensToClaim();
     error AlreadyClaimed();
 
     event PoolCreated(PoolId poolId);
     event WinningsClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
 
-    constructor(IPoolManager _poolManager, PoolModifyLiquidityTest _posm, PoolCreationHelper _poolCreationHelper)
+    constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper)
         BaseHook(_poolManager)
     {
         poolm = IPoolManager(_poolManager);
-        posm = PoolModifyLiquidityTest(_posm);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
     }
 
@@ -78,7 +68,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             afterInitialize: false,
             beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
+            beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: false,
@@ -142,75 +132,76 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    function _beforeRemoveLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal view override returns (bytes4) {
-        // Get market from pool key
-        PoolId poolId = key.toId();
-        Market memory market = _getMarketFromPoolId(poolId);
-
-        // Check market exists and is active
-        require(market.state == MarketState.Active, "Market not active");
-
-        // Only allow removals after market is resolved
-        if (market.state != MarketState.Resolved) {
-            revert DirectLiquidityNotAllowed();
-        }
-
-        return BaseHook.beforeRemoveLiquidity.selector;
-    }
 
     //////////////////////////
     function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
-        // Create YES and NO tokens
-        OutcomeToken yesToken = new OutcomeToken("Market YES", "YES");
-        OutcomeToken noToken = new OutcomeToken("Market NO", "NO");
-
-        // Each unit of collateral backs 1 yes token and 1 no token
-        uint256 yesTokens = params.collateralAmount;
-        uint256 noTokens = params.collateralAmount;
-
-        // Mint YES and NO tokens to the creator instead of this contract
-        OutcomeToken(address(yesToken)).mint(params.creator, yesTokens);
-        OutcomeToken(address(noToken)).mint(params.creator, noTokens);
-
-        // Transfer collateral to this contract
-        IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
-
-        // Determine token order based on addresses
-        bool collateralIsToken0 = params.collateralAddress < address(yesToken);
-
-        // Create YES pool key
+        // Generate a unique market ID first
+        bytes32 marketId = keccak256(abi.encodePacked(
+            params.creator,
+            params.title,
+            params.description,
+            block.timestamp
+        ));
+        
+        // Use the marketId in the salt to ensure uniqueness
+        bytes32 yesSalt = keccak256(abi.encodePacked(
+            "YES_TOKEN", 
+            marketId, 
+            params.collateralAddress, 
+            _tokenDeploymentNonce++
+        ));
+        bytes32 noSalt = keccak256(abi.encodePacked(
+            "NO_TOKEN", 
+            marketId, 
+            params.collateralAddress, 
+            _tokenDeploymentNonce++));
+        
+        // Create tokens with CREATE2 to get deterministic addresses
+        OutcomeToken yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        OutcomeToken noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
+        
+        // Force correct ordering if needed
+        address collateral = params.collateralAddress;
+        if (collateral > address(yesToken)) {
+            // Deploy again with modified salt to get higher address
+            yesSalt = keccak256(abi.encodePacked("YES_TOKEN_HIGHER", marketId, params.collateralAddress));
+            yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        }
+        
+        if (collateral > address(noToken)) {
+            // Deploy again with modified salt to get higher address
+            noSalt = keccak256(abi.encodePacked("NO_TOKEN_HIGHER", marketId, params.collateralAddress));
+            noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
+        }
+        
+        // Verify correct ordering
+        assert(collateral < address(yesToken));
+        assert(collateral < address(noToken));
+        
+        // Create pool keys with guaranteed ordering
         PoolKey memory yesPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralIsToken0 ? params.collateralAddress : address(yesToken)),
-            currency1: Currency.wrap(collateralIsToken0 ? address(yesToken) : params.collateralAddress),
+            currency0: Currency.wrap(collateral),
+            currency1: Currency.wrap(address(yesToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-
-        bool collateralIsToken0No = params.collateralAddress < address(noToken);
-
-        // Create NO pool key
+        
         PoolKey memory noPoolKey = PoolKey({
-            currency0: Currency.wrap(collateralIsToken0No ? params.collateralAddress : address(noToken)),
-            currency1: Currency.wrap(collateralIsToken0No ? address(noToken) : params.collateralAddress),
+            currency0: Currency.wrap(collateral),
+            currency1: Currency.wrap(address(noToken)),
             fee: 10000,
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-
+        
         // Create both pools
-        poolCreationHelper.createUniswapPool(yesPoolKey);
-        poolCreationHelper.createUniswapPool(noPoolKey);
-
-        // Create market ID from both pool keys
-        bytes32 marketId = keccak256(abi.encodePacked(yesPoolKey.toId(), noPoolKey.toId()));
+        console.log("Creating both pools");
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, collateral < address(yesToken));
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, collateral < address(noToken));
 
         // Store market info
+        console.log("Storing market info");
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
             noPoolKey: noPoolKey,
@@ -225,8 +216,11 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
             title: params.title,
             description: params.description,
             endTimestamp: block.timestamp + params.duration,
-            curveId: params.curveId
+            curveId: params.curveId        
         });
+
+        // Mint YES and NO tokens to the creator instead of this contract
+        mintOutcomeTokens(marketId, params.collateralAmount);
 
         // Add market ID to the array of all markets
         _allMarketIds.push(marketId);
@@ -250,6 +244,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
         // Take collateral from the user
         IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
+
+        // update total collateral in the market
+        market.totalCollateral += collateralAmount;
 
         // Calculate token amount to mint (adjusting for decimal differences)
         uint256 tokenAmount = collateralAmount * decimalAdjustment;
@@ -380,9 +377,12 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook {
 
         // Calculate claim amount
         uint256 claimAmount = tokenBalance / decimalAdjustment;
+        console.log("claim amount: %s", claimAmount);
 
         // Ensure there's enough collateral left to claim
+
         uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
+        console.log("remaining collateral: %s", remainingCollateral);
         require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
 
         // Burn the winning tokens
