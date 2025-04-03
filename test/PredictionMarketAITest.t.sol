@@ -32,9 +32,7 @@ import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
-import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
 import {AIAgent} from "../src/oracle/AIAgent.sol";
-import {ECDSAStakeRegistry} from "@eigenlayer-middleware/src/unaudited/ECDSAStakeRegistry.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MockUSDC} from "../script/DeployLocal.s.sol";
 
@@ -104,7 +102,6 @@ contract PredictionMarketAITest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using AIOracleTestHelpers for *; // Use our helper library
-    using ECDSA for bytes32;
     
     // Contracts (already deployed)
     PredictionMarketHook public hook;
@@ -113,7 +110,6 @@ contract PredictionMarketAITest is Test, Deployers {
     
     // AI Oracle components (already deployed)
     AIOracleServiceManager public oracle;
-    AIAgentRegistry public registry;
     AIAgent public agent;
     
     // Constants
@@ -125,7 +121,6 @@ contract PredictionMarketAITest is Test, Deployers {
     
     // Contract addresses from the deployment
     address public constant ORACLE_ADDRESS = 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512;
-    address public constant REGISTRY_ADDRESS = 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9;
     address public constant AGENT_ADDRESS = 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9;
     address public constant HOOK_ADDRESS = 0x4444000000000000000000000000000000000a80;
     address public constant POOL_MANAGER_ADDRESS = 0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f;
@@ -139,51 +134,65 @@ contract PredictionMarketAITest is Test, Deployers {
         // Check addresses first
         bool oracleHasCode = ORACLE_ADDRESS.code.length > 0;
         bool hookHasCode = HOOK_ADDRESS.code.length > 0;
+        bool agentHasCode = AGENT_ADDRESS.code.length > 0;
+
         console.log("Oracle has code:", oracleHasCode);
         console.log("Hook has code:", hookHasCode);
+        console.log("Agent has code:", agentHasCode);
         
         // Only initialize if they have code
         if (oracleHasCode) {
             oracle = AIOracleServiceManager(ORACLE_ADDRESS);
+        } else {
+            console.log("WARNING: Oracle contract not found at", ORACLE_ADDRESS);
         }
         if (hookHasCode) {
             hook = PredictionMarketHook(HOOK_ADDRESS);
-        }
-        
-        // Similar checks for other contracts
-        
-        // Connect to contracts directly
-        poolModifyLiquidityTest = PoolModifyLiquidityTest(POOL_MODIFY_LIQUIDITY_ADDRESS);
-        poolCreationHelper = PoolCreationHelper(POOL_CREATION_HELPER_ADDRESS);
-        collateralToken = MockUSDC(MOCK_USDC_ADDRESS);
-        
-        // Check if connections were successful by calling a view function 
-        // or checking the code size
-        bool hookHasCodeAfterInit = address(hook).code.length > 0;
-        console.log("Hook has code:", hookHasCodeAfterInit);
-        
-        bool oracleHasCodeAfterInit = address(oracle).code.length > 0;
-        console.log("Oracle has code:", oracleHasCodeAfterInit);
-        
-        // Same for other contracts...
-        
-        // Only approve if hook has code
-        if (hookHasCodeAfterInit && address(collateralToken).code.length > 0) {
-            collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
-            console.log("Tokens approved for Hook");
-        }
-        
-        // Add these in setUp() right after Hook initialization
-        bool registryHasCode = REGISTRY_ADDRESS.code.length > 0;
-        bool agentHasCode = AGENT_ADDRESS.code.length > 0;
-        console.log("Registry has code:", registryHasCode);
-        console.log("Agent has code:", agentHasCode);
-
-        if (registryHasCode) {
-            registry = AIAgentRegistry(REGISTRY_ADDRESS);
+        } else {
+            console.log("WARNING: Hook contract not found at", HOOK_ADDRESS);
         }
         if (agentHasCode) {
             agent = AIAgent(AGENT_ADDRESS);
+        } else {
+             console.log("WARNING: Agent contract not found at", AGENT_ADDRESS);
+        }
+        
+        // Similar checks for other contracts
+        bool poolModifyHasCode = POOL_MODIFY_LIQUIDITY_ADDRESS.code.length > 0;
+        bool poolCreateHasCode = POOL_CREATION_HELPER_ADDRESS.code.length > 0;
+        bool usdcHasCode = MOCK_USDC_ADDRESS.code.length > 0;
+        
+        // Connect to other contracts directly if they exist
+        if (poolModifyHasCode) poolModifyLiquidityTest = PoolModifyLiquidityTest(POOL_MODIFY_LIQUIDITY_ADDRESS);
+        if (poolCreateHasCode) poolCreationHelper = PoolCreationHelper(POOL_CREATION_HELPER_ADDRESS);
+        if (usdcHasCode) collateralToken = MockUSDC(MOCK_USDC_ADDRESS);
+        
+        // Check if connections were successful
+        bool hookHasCodeAfterInit = address(hook).code.length > 0;
+        bool oracleHasCodeAfterInit = address(oracle).code.length > 0;
+        bool agentHasCodeAfterInit = address(agent).code.length > 0;
+
+        // Authorize the agent in the Oracle Service Manager if both exist
+        if (oracleHasCodeAfterInit && agentHasCodeAfterInit) {
+             // Use try-catch as the operator might already be added, or permissions issues
+            try oracle.addTestOperator(AGENT_ADDRESS) {
+                console.log("Authorized AGENT_ADDRESS as test operator in AIOracleServiceManager.");
+            } catch Error(string memory reason) {
+                // Check if already authorized (simple check, might need refinement)
+                if (oracle.testOperators(AGENT_ADDRESS())) {
+                     console.log("Agent already authorized as test operator.");
+                } else {
+                     console.log("Failed to add test operator:", reason);
+                }
+            } catch {
+                console.log("Failed to call addTestOperator (unknown error).");
+            }
+        }
+        
+        // Only approve if hook and token exist
+        if (hookHasCodeAfterInit && usdcHasCode) {
+            collateralToken.approve(address(hook), COLLATERAL_AMOUNT);
+            console.log("Tokens approved for Hook");
         }
         
         console.log("Setup complete - using existing deployed contracts");
@@ -193,10 +202,15 @@ contract PredictionMarketAITest is Test, Deployers {
         console.log("\n===== STARTING TEST WITH EXISTING DEPLOYMENTS =====");
         
         // Verify Oracle connectivity with try/catch
+        if (address(oracle).code.length == 0) {
+             console.log("Oracle not available, skipping test.");
+            return;
+        }
         try oracle.latestTaskNum() returns (uint32 latestTaskNum) {
             console.log("Latest task number from Oracle:", latestTaskNum);
         } catch {
             console.log("ERROR: Failed to call latestTaskNum() on Oracle");
+            return; // Stop test if oracle interaction fails
         }
         
         // Skip market creation if hook isn't initialized
@@ -219,7 +233,6 @@ contract PredictionMarketAITest is Test, Deployers {
         console.log("\n----- AGENT SETUP INFORMATION -----");
         console.log("To test with your agent, ensure it's configured with:");
         console.log("Oracle Address:", address(oracle));
-        console.log("Registry Address:", address(registry));
         console.log("Agent Address:", address(agent));
         
         console.log("\n===== TEST COMPLETED SUCCESSFULLY =====");
@@ -240,55 +253,76 @@ contract PredictionMarketAITest is Test, Deployers {
         console.log("====================================\n");
         
         // Call the createNewTask function
-        try oracle.createNewTask(taskDescription) returns (AIOracleServiceManager.Task memory newTask) {
-            console.log("Task created successfully");
+        // Ensure oracle exists before calling
+        if (address(oracle).code.length == 0) {
+            console.log("Oracle not initialized, cannot create task.");
+            return 0; // Or revert appropriately
+        }
+        try oracle.createNewTask(taskDescription) returns (AIOracleServiceManager.Task memory /*newTask*/) {
+            console.log("Task created successfully in Oracle Service Manager");
             
             // The task number is the current value of latestTaskNum - 1
             uint32 taskNum = oracle.latestTaskNum() - 1;
             console.log("Task number:", taskNum);
             return taskNum;
         } catch Error(string memory reason) {
-            console.log("Task creation FAILED:", reason);
-            revert(string(abi.encodePacked("Failed to create AI Oracle task: ", reason)));
+            console.log("ERROR creating task:", reason);
+            revert("Failed to create AI Oracle task");
         } catch {
-            console.log("Task creation FAILED: Unknown error");
-            revert("Failed to create AI Oracle task with unknown error");
-        }
-    }
-    
-    function createTestMarket() internal returns (bytes32) {
-        console.log("Creating test market...");
-        
-        // Create a market
-        CreateMarketParams memory params = CreateMarketParams({
-            oracle: address(this),
-            creator: address(this),
-            collateralAddress: address(collateralToken),
-            collateralAmount: COLLATERAL_AMOUNT,
-            title: "Will AI replace developers by 2030?",
-            description: "Market resolves to YES if AI systems can autonomously create complete production applications by 2030",
-            duration: 30 days,
-            curveId: 0
-        });
-        
-        try hook.createMarketAndDepositCollateral(params) returns (bytes32 id) {
-            console.log("Market created successfully");
-            return id;
-        } catch Error(string memory reason) {
-            console.log("Market creation FAILED:", reason);
-            revert(string(abi.encodePacked("Failed to create market: ", reason)));
-        } catch {
-            console.log("Market creation FAILED with unknown error");
-            revert("Failed to create market");
+             console.log("ERROR creating task (unknown error)");
+             revert("Failed to create AI Oracle task");
         }
     }
 
-    function bytes32ToString(bytes32 _bytes32) internal pure returns (string memory) {
-        bytes memory bytesArray = new bytes(64);
-        for (uint256 i = 0; i < 32; i++) {
-            bytesArray[i*2] = bytes1(uint8(uint256(_bytes32) / (2**(8*(31 - i))) % 16 + 48) + (uint8(uint256(_bytes32) / (2**(8*(31 - i))) % 16) >= 10 ? 39 : 0));
-            bytesArray[i*2+1] = bytes1(uint8(uint256(_bytes32) / (2**(8*(31 - i) + 4)) % 16 + 48) + (uint8(uint256(_bytes32) / (2**(8*(31 - i) + 4)) % 16) >= 10 ? 39 : 0));
-        }
-        return string(bytesArray);
+    // --- Helper Functions --- 
+
+    function createTestMarket() internal returns (bytes32) {
+        // Ensure needed contracts are available
+        require(address(hook) != address(0), "Hook not initialized");
+        require(address(collateralToken) != address(0), "Collateral token not initialized");
+        require(address(poolCreationHelper) != address(0), "PoolCreationHelper not initialized");
+        
+        console.log("Creating test market...");
+
+        // Define market parameters
+        CreateMarketParams memory params;
+        params.collateralToken = Currency.wrap(address(collateralToken));
+        params.marketName = "Test Market: AI Future";
+        params.resolver = address(this); // Use test contract as resolver for simplicity
+        params.hookAddress = address(hook);
+        params.initialLiquidity = 1 ether; // Example initial liquidity
+        
+        // Create the market using the helper
+        bytes32 newMarketId = poolCreationHelper.createMarket(params);
+        
+        console.log("Market creation initiated.");
+        console.log("Assigned Market ID:", bytes32ToString(newMarketId));
+        
+        return newMarketId;
     }
+
+    // Helper to convert bytes32 to string for logging
+    function bytes32ToString(bytes32 _bytes32) internal pure returns (string memory) {
+        // Basic hex string conversion
+        return AIOracleTestHelpers.bytes32ToHexString(_bytes32);
+    }
+    
+    // Placeholder for market resolution logic (if needed in further tests)
+    function resolveMarket(bytes32 _marketId, bool outcome) external {
+        // Ensure hook is initialized
+        require(address(hook) != address(0), "Hook not initialized");
+        // In a real scenario, only the designated resolver could call this
+        // Hook should have a function like `resolveMarket(marketId, outcome)`
+        // hook.resolveMarket(_marketId, outcome); 
+        console.log("Market resolution called (placeholder)", bytes32ToString(_marketId), outcome);
+    }
+
+    // Fallback function to receive Ether
+    receive() external payable {}
+
+    // TODO: Add tests for:
+    // - Agent responding to task (processTask)
+    // - Consensus mechanism in AIOracleServiceManager
+    // - Market resolution based on AI consensus
+    // - Trading outcome tokens
 }

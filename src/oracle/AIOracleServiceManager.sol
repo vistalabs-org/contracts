@@ -7,12 +7,9 @@ pragma solidity ^0.8.24;
 // import {IServiceManager} from "@eigenlayer-middleware/src/interfaces/IServiceManager.sol";
 
 // Add OwnableUpgradeable import
-import {OwnableUpgradeable} from "@openzeppelin-upgrades/contracts/access/OwnableUpgradeable.sol";
-import {ECDSAUpgradeable} from "@openzeppelin-upgrades/contracts/utils/cryptography/ECDSAUpgradeable.sol";
-import {IERC1271Upgradeable} from "@openzeppelin-upgrades/contracts/interfaces/IERC1271Upgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 /**
  * @title Primary entrypoint for procuring services from AI Oracle with multi-agent consensus.
@@ -20,8 +17,6 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
  */
 // Remove ECDSAServiceManagerBase inheritance, add OwnableUpgradeable
 contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
-    using ECDSAUpgradeable for bytes32;
-
     uint32 public latestTaskNum;
     
     // Consensus configuration

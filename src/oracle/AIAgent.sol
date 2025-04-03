@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
-import {ECDSAUpgradeable} from "@openzeppelin-upgrades/contracts/utils/cryptography/ECDSAUpgradeable.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title AIAgent
  * @dev Contract representing an AI agent that can participate in the oracle's consensus mechanism
+ *      Uses ERC721 to potentially represent agents as NFTs.
+ *      Is upgradeable and Ownable.
  */
-contract AIAgent is Ownable {
-    using ECDSAUpgradeable for bytes32;
+contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
     
     // The AI Oracle service manager this agent works with
     IAIOracleServiceManager public serviceManager;
@@ -34,16 +36,26 @@ contract AIAgent is Ownable {
     event RewardReceived(uint256 amount, uint32 taskIndex);
     
     /**
-     * @dev Constructor
-     * @param _serviceManager Address of the oracle service manager
-     * @param _modelType The type of AI model used by this agent
-     * @param _modelVersion The version of the AI model
+     * @dev Initializes the contract.
+     * @param _initialOwner The initial owner of the contract.
+     * @param _serviceManager Address of the oracle service manager.
+     * @param _modelType The type of AI model used by this agent.
+     * @param _modelVersion The version of the AI model.
+     * @param _name The name for the ERC721 token.
+     * @param _symbol The symbol for the ERC721 token.
      */
-    constructor(
+    function initialize(
+        address _initialOwner,
         address _serviceManager,
         string memory _modelType,
-        string memory _modelVersion
-    ) Ownable(msg.sender) {
+        string memory _modelVersion,
+        string memory _name,
+        string memory _symbol
+    ) external initializer {
+        __ERC721_init(_name, _symbol);
+        __Ownable_init(_initialOwner);
+        
+        require(_serviceManager != address(0), "Invalid service manager address");
         serviceManager = IAIOracleServiceManager(_serviceManager);
         modelType = _modelType;
         modelVersion = _modelVersion;
