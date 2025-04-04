@@ -2,13 +2,17 @@
 
 ## Deployed Contracts (Sepolia)
 
-| Contract | Address |
-|----------|---------|
-| PoolManager | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
-| PoolModifyLiquidityTest | `0x64D6ee06A8Ece25F5588ffbB066B5C64c878AedE` |
-| PoolSwapTest | `0xf7E9C016a23b05700FDF36caB39F64065F20Cdfd` |
-| PoolCreationHelper | `0xC07BEE42ea57Afd89ca5eF7307bd6a630391d3A0` |
-| PredictionMarketHook | `0x312D3B8A8aa25186F53ECb939Bdce6F5B403c880` |
+| Contract                   | Address                                      |
+|----------------------------|----------------------------------------------|
+| PoolManager                | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
+| PoolSwapTest               | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
+| AIAgentRegistry            | `0x82013345325952E66a896623c3D3ddDEd202977D` |
+| AIOracleServiceManager Impl| `0x6fa8Db81A8afAb6aE3D206E5Dbe18739F72F69D6` |
+| AIOracleServiceManager Proxy| `0x36ef836663395c4E84B250274B1dc927F6102962` |
+| ProxyAdmin                 | `0xC312320126Be5ba73dcBfAc414999951d70E4729` |
+| AIAgent                    | `0x27a3fE3Eb6c77a836dedb958f155C088b548adB4` |
+| PoolCreationHelper         | `0xc61304C85223C5d5b0e288962E48CA3380144Da0` |
+| PredictionMarketHook       | `0x74D7669e23e5035D8Bea3bDe2ea21C131E984880` |
 
 ## Overview
 
@@ -68,11 +72,3 @@ npm run dev
 ```
 
 Visit `http://localhost:3000` to access the application.
-
-# Known errors
-
-## EigenLayer Library Version Fix
-The EigenLayer middleware library uses a Solidity version that might not be available. Fix with:
-```bash
-find lib/eigenlayer-middleware -name "*.sol" -exec sed -i 's/pragma solidity \^0.8.27/pragma solidity ^0.8.26/g' {} \;
-```

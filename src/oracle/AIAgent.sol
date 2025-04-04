@@ -9,7 +9,6 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 /**
  * @title AIAgent
  * @dev Contract representing an AI agent that can participate in the oracle's consensus mechanism
- *      Uses ERC721 to potentially represent agents as NFTs.
  *      Is upgradeable and Ownable.
  */
 contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
@@ -53,7 +52,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
         string memory _symbol
     ) external initializer {
         __ERC721_init(_name, _symbol);
-        __Ownable_init();
+        __Ownable_init(_initialOwner);
         
         require(_serviceManager != address(0), "Invalid service manager address");
         serviceManager = IAIOracleServiceManager(_serviceManager);

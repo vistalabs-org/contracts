@@ -2,20 +2,24 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
+// No longer need IAIOracleServiceManager interface here
+// import {IAIOracleServiceManager} from "../interfaces/IAIOracleServiceManager.sol";
 import {AIAgent} from "./AIAgent.sol";
+import "../interfaces/IAIAgentRegistry.sol"; // Import the interface it implements
 
 /**
  * @title AIAgentRegistry
- * @dev Registry for AI agents participating in the oracle's consensus mechanism
+ * @dev Registry for AI agents participating in the oracle's consensus mechanism.
+ *      Oracle address is NOT stored here. Caller of registerAgent is responsible
+ *      for ensuring the agent is configured for the correct Oracle.
  */
-contract AIAgentRegistry is Ownable {
-    // The AI Oracle service manager
-    IAIOracleServiceManager public serviceManager;
+contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interface
+    // The AI Oracle service manager address is NOT stored here anymore.
+    // IAIOracleServiceManager public serviceManager;
     
     // Registered agents
     address[] public registeredAgents;
-    mapping(address => bool) public isRegistered;
+    mapping(address => bool) public override isRegistered; // Add override
     
     // Agent metadata
     mapping(address => string) public agentModelTypes;
@@ -32,16 +36,26 @@ contract AIAgentRegistry is Ownable {
     event AgentStatusUpdated(address indexed agentAddress, AIAgent.AgentStatus status);
     
     /**
-     * @dev Constructor
-     * @param _serviceManager Address of the oracle service manager
+     * @dev Constructor - No longer takes service manager address
      */
-    constructor(address _serviceManager) Ownable(msg.sender) {
-        serviceManager = IAIOracleServiceManager(_serviceManager);
+    constructor() Ownable(msg.sender) {
+        // No need to set serviceManager here
     }
+    
+    // No longer need updateServiceManager
+    /*
+    function updateServiceManager(address _newServiceManager) external onlyOwner {
+        require(_newServiceManager != address(0), "Invalid service manager address");
+        serviceManager = IAIOracleServiceManager(_newServiceManager);
+    }
+    */
     
     /**
      * @dev Register a new AI agent
      * @param agent Address of the agent contract
+     * @notice The check for matching serviceManager has been removed.
+     *         The caller (Registry Owner) is responsible for ensuring the agent
+     *         is configured correctly before registering.
      */
     function registerAgent(address agent) external onlyOwner {
         require(!isRegistered[agent], "Agent already registered");
@@ -49,11 +63,17 @@ contract AIAgentRegistry is Ownable {
         
         AIAgent aiAgent = AIAgent(agent);
         
-        // Verify the agent is properly configured with the same service manager
+        // REMOVED: Verification check against a stored serviceManager
+        /*
         require(
             address(aiAgent.serviceManager()) == address(serviceManager),
             "Agent has incorrect service manager"
         );
+        */
+
+        // It's still good practice to check if the agent *has* a service manager set,
+        // even if we don't know if it's the 'right' one.
+        require(address(aiAgent.serviceManager()) != address(0), "Agent service manager not set");
         
         // Register the agent
         registeredAgents.push(agent);
