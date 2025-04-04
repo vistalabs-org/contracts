@@ -60,7 +60,8 @@ interface IPredictionMarketHook {
     /// @notice Allows users to mint YES/NO tokens by providing collateral
     /// @param marketId The ID of the market
     /// @param collateralAmount Amount of collateral to provide
-    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) external;
+    /// @param collateralAddress The address of the collateral token (added)
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount, address collateralAddress) external;
 
     // --- View Functions ---
 

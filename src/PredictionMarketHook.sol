@@ -28,10 +28,11 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
 
     IPoolManager public poolm;
     PoolCreationHelper public poolCreationHelper;
-    
+
     int24 public TICK_SPACING = 100;
     // Market ID counter
     uint256 private _marketCount;
+    mapping(uint256 => PoolId) private _marketPoolIds;
     // Map market pools to market info
     mapping(bytes32 => Market) private _markets;
     /// @notice Mapping to track which addresses have claimed their winnings
@@ -49,6 +50,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // Add a nonce counter as a state variable
     uint256 private _tokenDeploymentNonce;
 
+    // Add a dedicated market nonce
+    uint256 private _marketNonce;
+
     // Store Oracle address, set post-deployment
     address private _aiOracleServiceManagerAddress;
 
@@ -56,18 +60,18 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     error MarketNotResolved();
     error AlreadyClaimed();
     error InvalidOracleAddress();
+    error InvalidTickRange();
 
     // Event for Oracle Address Update
     event OracleServiceManagerSet(address indexed newOracleAddress);
 
     constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper, address initialOwner)
         BaseHook(_poolManager)
-        Ownable(msg.sender) // Owner initially set to CREATE2 factory (msg.sender)
+        Ownable(msg.sender)
     {
         poolm = IPoolManager(_poolManager);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
 
-        // Transfer ownership from the CREATE2 factory to the intended owner (script deployer)
         _transferOwnership(initialOwner);
     }
 
@@ -94,21 +98,18 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
-    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata data)
-        internal view override returns (bytes4, BeforeSwapDelta, uint24)
-    {
+    function _beforeSwap(PoolKey calldata key) internal view returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not open for trading");
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function _beforeAddLiquidity(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
-        bytes calldata data
-    ) internal view override returns (bytes4) {
+    function _beforeAddLiquidity(PoolKey calldata key, IPoolManager.ModifyLiquidityParams calldata params)
+        internal
+        view
+        returns (bytes4)
+    {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not active for adding liquidity");
@@ -126,50 +127,59 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     }
 
     //////////////////////////
-    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public override returns (bytes32) {
-        // Generate a unique market ID first
-        bytes32 marketId = keccak256(abi.encodePacked(
-            params.creator,
-            params.title,
-            params.description,
-            block.timestamp
-        ));
-        
-        // Use the marketId in the salt to ensure uniqueness
-        bytes32 yesSalt = keccak256(abi.encodePacked(
-            "YES_TOKEN", 
-            marketId, 
-            params.collateralAddress, 
-            _tokenDeploymentNonce++
-        ));
-        bytes32 noSalt = keccak256(abi.encodePacked(
-            "NO_TOKEN", 
-            marketId, 
-            params.collateralAddress, 
-            _tokenDeploymentNonce++));
-        
-        // Create tokens with CREATE2 to get deterministic addresses
-        OutcomeToken yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
-        OutcomeToken noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
-        
-        // Force correct ordering if needed
+    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
+        // Generate a truly unique market ID
+        bytes32 marketId = keccak256(
+            abi.encodePacked(
+                params.creator,
+                params.title,
+                params.description,
+                block.timestamp,
+                _marketNonce++,
+                msg.sender,
+                block.number
+            )
+        );
+
         address collateral = params.collateralAddress;
-        if (collateral > address(yesToken)) {
-            // Deploy again with modified salt to get higher address
-            yesSalt = keccak256(abi.encodePacked("YES_TOKEN_HIGHER", marketId, params.collateralAddress, _tokenDeploymentNonce++));
-            yesToken = new OutcomeToken{salt: yesSalt}("Market YES", "YES");
+        OutcomeToken yesToken;
+        OutcomeToken noToken;
+
+        // Keep trying different salts until we get tokens with higher addresses than collateral
+        uint256 attempts = 0;
+        bool validTokens = false;
+
+        while (!validTokens && attempts < 100) {
+            // Generate unique salts for each attempt
+            bytes32 yesSalt =
+                keccak256(abi.encodePacked("YES_TOKEN", marketId, attempts, block.timestamp, _tokenDeploymentNonce++));
+
+            bytes32 noSalt =
+                keccak256(abi.encodePacked("NO_TOKEN", marketId, attempts, block.timestamp, _tokenDeploymentNonce++));
+
+            // Deploy tokens with CREATE2
+            yesToken = new OutcomeToken{salt: yesSalt}(
+                string(abi.encodePacked("Market YES ", params.title)),
+                string(abi.encodePacked("YES", _tokenDeploymentNonce))
+            );
+
+            noToken = new OutcomeToken{salt: noSalt}(
+                string(abi.encodePacked("Market NO ", params.title)),
+                string(abi.encodePacked("NO", _tokenDeploymentNonce))
+            );
+
+            // Check if both tokens have higher addresses than collateral
+            if (collateral < address(yesToken) && collateral < address(noToken)) {
+                validTokens = true;
+            } else {
+                // If not valid, increment attempts and try again
+                attempts++;
+            }
         }
-        
-        if (collateral > address(noToken)) {
-            // Deploy again with modified salt to get higher address
-            noSalt = keccak256(abi.encodePacked("NO_TOKEN_HIGHER", marketId, params.collateralAddress, _tokenDeploymentNonce++));
-            noToken = new OutcomeToken{salt: noSalt}("Market NO", "NO");
-        }
-        
-        // Verify correct ordering
-        assert(collateral < address(yesToken));
-        assert(collateral < address(noToken));
-        
+
+        // If we couldn't get valid tokens after multiple attempts, revert
+        require(validTokens, "Failed to create tokens with correct address ordering");
+
         // Create pool keys with guaranteed ordering
         PoolKey memory yesPoolKey = PoolKey({
             currency0: Currency.wrap(collateral),
@@ -178,7 +188,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-        
+
         PoolKey memory noPoolKey = PoolKey({
             currency0: Currency.wrap(collateral),
             currency1: Currency.wrap(address(noToken)),
@@ -186,40 +196,32 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
             tickSpacing: 100,
             hooks: IHooks(address(this))
         });
-        
+
         // Create both pools
-        console.log("Creating both pools");
-        // The PoolCreationHelper currently sets its own initial price internally.
-        // Passing 'true' because collateral is token0 in both pool keys.
-        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, true);
-        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, true);
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey);
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey);
 
-        // Emit PoolCreated Events (moved from constructor of helper?)
-        emit PoolCreated(yesPoolKey.toId());
-        emit PoolCreated(noPoolKey.toId());
-
+        // Store market info
         console.log("Storing market info");
         _markets[marketId] = Market({
             yesPoolKey: yesPoolKey,
             noPoolKey: noPoolKey,
-            oracle: _aiOracleServiceManagerAddress,
+            oracle: params.oracle,
             creator: params.creator,
             yesToken: yesToken,
             noToken: noToken,
-            state: MarketState.Created, // Use Created state
+            state: MarketState.Active,
             outcome: false,
-            totalCollateral: 0, // Initialize collateral to 0 before transfer
+            totalCollateral: params.collateralAmount,
             collateralAddress: params.collateralAddress,
             title: params.title,
             description: params.description,
             endTimestamp: block.timestamp + params.duration,
-            curveId: params.curveId        
+            curveId: params.curveId
         });
 
-        IERC20(params.collateralAddress).transferFrom(msg.sender, address(this), params.collateralAmount);
-        _markets[marketId].totalCollateral = params.collateralAmount;
-
-        mintOutcomeTokensForCreator(marketId, params.collateralAmount);
+        // Mint YES and NO tokens to the creator instead of this contract
+        mintOutcomeTokens(marketId, params.collateralAmount, params.collateralAddress);
 
         // Add market ID to the array of all markets
         _allMarketIds.push(marketId);
@@ -233,26 +235,24 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
 
     // mint YES / NO tokens based on collateral amount
     // Users can mint based on current price to provide liquidity to the market
-    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount) public {
-        Market memory market = _markets[marketId];
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount, address collateralAddress) public {
+        // Check if market exists
+        require(_markets[marketId].creator != address(0), "Market not found");
 
         // Calculate collateral to return (accounting for decimal differences)
         // YES/NO tokens have 18 decimals, collateral might have different decimals
-        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        uint256 collateralDecimals = ERC20(collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
 
-        // Take collateral from the user
-        IERC20(market.collateralAddress).transferFrom(msg.sender, address(this), collateralAmount);
-
         // update total collateral in the market
-        market.totalCollateral += collateralAmount;
+        _markets[marketId].totalCollateral += collateralAmount;
 
         // Calculate token amount to mint (adjusting for decimal differences)
         uint256 tokenAmount = collateralAmount * decimalAdjustment;
 
         // Mint YES and NO tokens to the user
-        market.yesToken.mint(msg.sender, tokenAmount);
-        market.noToken.mint(msg.sender, tokenAmount);
+        _markets[marketId].yesToken.mint(msg.sender, tokenAmount);
+        _markets[marketId].noToken.mint(msg.sender, tokenAmount);
     }
 
     // Function to get all market IDs
@@ -315,7 +315,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     /// @notice Moves the market from Active to Closed (e.g., based on end time)
     /// @dev Needs logic to determine when this transition should happen (e.g., time-based)
     /// @param marketId The ID of the market
-    function closeMarket(bytes32 marketId) external override { // Renamed from closeTrading
+    function closeMarket(bytes32 marketId) external override {
+        // Renamed from closeTrading
         Market storage market = _markets[marketId];
         require(market.state == MarketState.Active, "Market not active");
         market.state = MarketState.Closed; // Updated state name
@@ -336,9 +337,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         string memory taskName = string.concat("Resolve Market: ", market.title);
         // We need the IAIOracleServiceManager interface to call the function
         uint32 taskIndex = IAIOracleServiceManager(_aiOracleServiceManagerAddress).createMarketResolutionTask(
-            taskName,
-            marketId,
-            address(this)
+            taskName, marketId, address(this)
         );
 
         // Optional: Store the task index for reference
@@ -370,13 +369,13 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         Market storage market = _markets[marketId];
         // Check if caller is oracle or creator
         require(
-            msg.sender == _aiOracleServiceManagerAddress || msg.sender == market.creator,
-            "Not authorized to cancel"
+            msg.sender == _aiOracleServiceManagerAddress || msg.sender == market.creator, "Not authorized to cancel"
         );
 
         // Check if market can be cancelled (Created, Active, or Closed)
         require(
-            market.state == MarketState.Created || market.state == MarketState.Active || market.state == MarketState.Closed,
+            market.state == MarketState.Created || market.state == MarketState.Active
+                || market.state == MarketState.Closed,
             "Market cannot be cancelled in current state"
         );
         market.state = MarketState.Cancelled;
@@ -453,6 +452,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         return _getMarketFromPoolId(poolId);
     }
 
+    function marketCount() external view returns (uint256) {
+        return _marketCount;
+    }
+
+    function marketPoolIds(uint256 index) external view returns (PoolId) {
+        return _marketPoolIds[index];
+    }
+
     function claimedTokens(bytes32 marketId) external view override returns (uint256) {
         return _claimedTokens[marketId];
     }
@@ -481,7 +488,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         market.yesToken.mint(market.creator, tokenAmount);
         market.noToken.mint(market.creator, tokenAmount);
     }
-    
+
     /// @notice Sets or updates the address of the AI Oracle Service Manager contract.
     /// @dev Can only be called by the owner. Emits OracleServiceManagerSet event.
     /// @param newOracleAddress The address of the new oracle service manager.

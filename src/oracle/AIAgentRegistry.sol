@@ -13,35 +13,38 @@ import "../interfaces/IAIAgentRegistry.sol"; // Import the interface it implemen
  *      Oracle address is NOT stored here. Caller of registerAgent is responsible
  *      for ensuring the agent is configured for the correct Oracle.
  */
-contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interface
+contract AIAgentRegistry is
+    Ownable,
+    IAIAgentRegistry // Implement the interface
+{
     // The AI Oracle service manager address is NOT stored here anymore.
     // IAIOracleServiceManager public serviceManager;
-    
+
     // Registered agents
     address[] public registeredAgents;
     mapping(address => bool) public override isRegistered; // Add override
-    
+
     // Agent metadata
     mapping(address => string) public agentModelTypes;
     mapping(address => string) public agentModelVersions;
-    
+
     // Agent performance metrics
     mapping(address => uint256) public agentTasksCompleted;
     mapping(address => uint256) public agentConsensusParticipations;
     mapping(address => uint256) public agentRewardsEarned;
-    
+
     // Events
     event AgentRegistered(address indexed agentAddress, string modelType, string modelVersion);
     event AgentUnregistered(address indexed agentAddress);
     event AgentStatusUpdated(address indexed agentAddress, AIAgent.AgentStatus status);
-    
+
     /**
      * @dev Constructor - No longer takes service manager address
      */
     constructor() Ownable(msg.sender) {
         // No need to set serviceManager here
     }
-    
+
     // No longer need updateServiceManager
     /*
     function updateServiceManager(address _newServiceManager) external onlyOwner {
@@ -49,7 +52,7 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
         serviceManager = IAIOracleServiceManager(_newServiceManager);
     }
     */
-    
+
     /**
      * @dev Register a new AI agent
      * @param agent Address of the agent contract
@@ -60,9 +63,9 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
     function registerAgent(address agent) external onlyOwner {
         require(!isRegistered[agent], "Agent already registered");
         require(agent != address(0), "Invalid agent address");
-        
+
         AIAgent aiAgent = AIAgent(agent);
-        
+
         // REMOVED: Verification check against a stored serviceManager
         /*
         require(
@@ -74,28 +77,28 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
         // It's still good practice to check if the agent *has* a service manager set,
         // even if we don't know if it's the 'right' one.
         require(address(aiAgent.serviceManager()) != address(0), "Agent service manager not set");
-        
+
         // Register the agent
         registeredAgents.push(agent);
         isRegistered[agent] = true;
-        
+
         // Store agent metadata
         agentModelTypes[agent] = aiAgent.modelType();
         agentModelVersions[agent] = aiAgent.modelVersion();
-        
+
         emit AgentRegistered(agent, aiAgent.modelType(), aiAgent.modelVersion());
     }
-    
+
     /**
      * @dev Unregister an AI agent
      * @param agent Address of the agent contract to unregister
      */
     function unregisterAgent(address agent) external onlyOwner {
         require(isRegistered[agent], "Agent not registered");
-        
+
         // Remove from registry
         isRegistered[agent] = false;
-        
+
         // Remove from array (find and replace with last element, then pop)
         for (uint256 i = 0; i < registeredAgents.length; i++) {
             if (registeredAgents[i] == agent) {
@@ -104,10 +107,10 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
                 break;
             }
         }
-        
+
         emit AgentUnregistered(agent);
     }
-    
+
     /**
      * @dev Update an agent's status
      * @param agent Address of the agent
@@ -115,12 +118,12 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
      */
     function updateAgentStatus(address agent, AIAgent.AgentStatus status) external onlyOwner {
         require(isRegistered[agent], "Agent not registered");
-        
+
         AIAgent(agent).setStatus(status);
-        
+
         emit AgentStatusUpdated(agent, status);
     }
-    
+
     /**
      * @dev Get all registered agents
      * @return Array of agent addresses
@@ -128,7 +131,7 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
     function getAllAgents() external view returns (address[] memory) {
         return registeredAgents;
     }
-    
+
     /**
      * @dev Get count of registered agents
      * @return Number of registered agents
@@ -136,29 +139,25 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
     function getAgentCount() external view returns (uint256) {
         return registeredAgents.length;
     }
-    
+
     /**
      * @dev Update agent statistics based on their contract data
      * @param agent Address of the agent to update
      */
     function updateAgentStats(address agent) external {
         require(isRegistered[agent], "Agent not registered");
-        
+
         AIAgent aiAgent = AIAgent(agent);
-        
+
         // Get updated stats from the agent
-        (
-            uint256 tasksCompleted,
-            uint256 consensusParticipations,
-            uint256 totalRewards,
-        ) = aiAgent.getAgentStats();
-        
+        (uint256 tasksCompleted, uint256 consensusParticipations, uint256 totalRewards,) = aiAgent.getAgentStats();
+
         // Update registry records
         agentTasksCompleted[agent] = tasksCompleted;
         agentConsensusParticipations[agent] = consensusParticipations;
         agentRewardsEarned[agent] = totalRewards;
     }
-    
+
     /**
      * @dev Get agent details
      * @param agent Address of the agent
@@ -168,15 +167,19 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
      * @return consensusParticipations Number of times the agent participated in consensus
      * @return rewardsEarned Total rewards earned by the agent
      */
-    function getAgentDetails(address agent) external view returns (
-        string memory modelType,
-        string memory modelVersion,
-        uint256 tasksCompleted,
-        uint256 consensusParticipations,
-        uint256 rewardsEarned
-    ) {
+    function getAgentDetails(address agent)
+        external
+        view
+        returns (
+            string memory modelType,
+            string memory modelVersion,
+            uint256 tasksCompleted,
+            uint256 consensusParticipations,
+            uint256 rewardsEarned
+        )
+    {
         require(isRegistered[agent], "Agent not registered");
-        
+
         return (
             agentModelTypes[agent],
             agentModelVersions[agent],
@@ -185,4 +188,4 @@ contract AIAgentRegistry is Ownable, IAIAgentRegistry { // Implement the interfa
             agentRewardsEarned[agent]
         );
     }
-} 
+}

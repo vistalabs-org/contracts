@@ -78,10 +78,10 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // 3. Calculate the deterministic hook address and salt using HookMiner
         (address calculatedHookAddr, bytes32 salt) = HookMiner.find(
-            address(this),       // Deployer
-            hookFlags,           // Required hook flags
-            hookCreationCode,    // Contract creation code
-            hookConstructorArgs  // Constructor arguments
+            address(this), // Deployer
+            hookFlags, // Required hook flags
+            hookCreationCode, // Contract creation code
+            hookConstructorArgs // Constructor arguments
         );
         console.log("Calculated Hook address:", calculatedHookAddr);
 
@@ -89,8 +89,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Now that we know the calculated hook address, initialize the oracle manager
         oracleManager.initialize(
             address(this), // Owner
-            1,             // Minimum Responses
-            10000,         // Consensus Threshold (100%)
+            1, // Minimum Responses
+            10000, // Consensus Threshold (100%)
             calculatedHookAddr // The address where the hook WILL be deployed
         );
         console.log("Oracle Manager initialized.");
@@ -163,23 +163,24 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 expectedTokenAmount = mintAmount * decimalAdjustment;
 
         // Approve collateral
-        collateralToken.approve(address(hook), mintAmount);
+        // Transfer collateral to the hook *before* calling mintOutcomeTokens.
+        bool sent = collateralToken.transfer(address(hook), mintAmount);
+        require(sent, "Collateral transfer failed for test_mintOutcomeTokens_correctRatio");
 
-        // Mint outcome tokens
-        hook.mintOutcomeTokens(marketId, mintAmount);
+        // Mint outcome tokens, passing the collateral address explicitly
+        hook.mintOutcomeTokens(marketId, mintAmount, address(collateralToken));
 
         // Check balances after minting
         uint256 newYesBalance = OutcomeToken(address(market.yesToken)).balanceOf(address(this));
         uint256 newNoBalance = OutcomeToken(address(market.noToken)).balanceOf(address(this));
         uint256 newCollateralBalance = collateralToken.balanceOf(address(this));
 
-        
         assertEq(newYesBalance - initialYesBalance, expectedTokenAmount, "Should mint adjusted amount of YES tokens");
         assertEq(newNoBalance - initialNoBalance, expectedTokenAmount, "Should mint adjusted amount of NO tokens");
         assertEq(
             initialCollateralBalance - newCollateralBalance, mintAmount, "Should consume equal amount of collateral"
         );
-        
+
         console.log("received yes tokens: %s", newYesBalance - initialYesBalance);
         console.log("received no tokens: %s", newNoBalance - initialNoBalance);
         console.log("received collateral: %s", initialCollateralBalance - newCollateralBalance);
@@ -279,7 +280,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Verify market details
         assertEq(market.oracle, address(oracleManager), "Market.oracle address mismatch");
         assertEq(market.creator, address(this), "Creator address mismatch");
-        assertEq(uint8(market.state), uint8(MarketState.Created), "Market should be created");
+        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be active");
         assertEq(market.totalCollateral, COLLATERAL_AMOUNT, "Collateral amount mismatch");
         assertEq(market.collateralAddress, address(collateralToken), "Collateral address mismatch");
         assertTrue(market.endTimestamp > block.timestamp, "End timestamp should be in the future");
@@ -299,7 +300,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Get the decimal adjustment factor
         uint256 collateralDecimals = ERC20Mock(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
-        
+
         // Calculate expected token amount after minting
         uint256 expectedMintedAmount = COLLATERAL_AMOUNT * decimalAdjustment;
 
@@ -310,17 +311,12 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Verify tokens were transferred for liquidity
         // Account for decimal adjustment in assertions
         assertLe(
-            yesToken.balanceOf(address(this)), 
-            expectedMintedAmount, 
-            "Creator should have spent YES tokens on liquidity"
+            yesToken.balanceOf(address(this)), expectedMintedAmount, "Creator should have spent YES tokens on liquidity"
         );
 
         assertLe(
-            noToken.balanceOf(address(this)), 
-            expectedMintedAmount, 
-            "Creator should have spent NO tokens on liquidity"
+            noToken.balanceOf(address(this)), expectedMintedAmount, "Creator should have spent NO tokens on liquidity"
         );
-        
     }
 
     // Instead of trying to modify the parameter, return the value
@@ -345,7 +341,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         bytes32 marketId = createTestMarket();
 
         // ***** ACTIVATE THE MARKET *****
-        hook.activateMarket(marketId);
+        // hook.activateMarket(marketId);
 
         // Get market details
         Market memory market = hook.getMarketById(marketId);
@@ -420,10 +416,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Get market details
         Market memory market = hook.getMarketById(marketId);
         OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
-        OutcomeToken noToken = OutcomeToken(address(market.noToken));
-
-        // Create a user who will buy YES tokens
-        address user = makeAddr("user");
 
         // Give user some collateral tokens
         collateralToken.mint(address(this), 1e6 * 1e6); // 10 USDC
@@ -431,7 +423,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Record balances before swap
         uint256 userCollateralBefore = collateralToken.balanceOf(address(this));
         uint256 userYesTokensBefore = yesToken.balanceOf(address(this));
-        uint256 userNoTokensBefore = noToken.balanceOf(address(this));
 
         console.log("User collateral before swap:", userCollateralBefore);
         console.log("User YES tokens before swap:", userYesTokensBefore);
@@ -469,9 +460,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Assert swap didn't revert
         assertTrue(swapSucceeded, "Swap should not revert");
-
     }
-
 
     function test_resolveAndClaim() public {
         // Create a market with liquidity
@@ -509,7 +498,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 expectedCollateralClaim = initialYesBalance / decimalAdjustment;
         uint256 finalCollateralBalance = collateralToken.balanceOf(address(this));
-        assertEq(finalCollateralBalance - initialCollateralBalance, expectedCollateralClaim, "Incorrect collateral claimed");
+        assertEq(
+            finalCollateralBalance - initialCollateralBalance, expectedCollateralClaim, "Incorrect collateral claimed"
+        );
 
         // Verify tokens were burned
         assertEq(yesToken.balanceOf(address(this)), 0, "YES tokens should be burned");
@@ -554,25 +545,25 @@ contract PredictionMarketHookTest is Test, Deployers {
     function test_initialOutcomeTokenPrices() public {
         // Create a market with liquidity
         bytes32 marketId = createTestMarketWithLiquidity();
-        
+
         // Get market details
         Market memory market = hook.getMarketById(marketId);
-        
+
         // Calculate the current price for YES tokens
         (uint160 sqrtPriceX96Yes,,,) = stateView.getSlot0(market.yesPoolKey.toId());
         uint256 priceYesInCollateral = calculatePrice(sqrtPriceX96Yes, true);
-        
+
         // Calculate the current price for NO tokens
         (uint160 sqrtPriceX96No,,,) = stateView.getSlot0(market.noPoolKey.toId());
         uint256 priceNoInCollateral = calculatePrice(sqrtPriceX96No, true);
-        
+
         // Log the prices
-        console.log("YES token price in USDC: ", priceYesInCollateral );
-        console.log("NO token price in USDC: ", priceNoInCollateral );
-        
+        console.log("YES token price in USDC: ", priceYesInCollateral);
+        console.log("NO token price in USDC: ", priceNoInCollateral);
+
         // Check that prices are close to 0.5 USDC (with some tolerance for rounding)
         assertApproxEqRel(priceYesInCollateral, 0.5 * 1e6, 0.05e18); // 5% tolerance
-        assertApproxEqRel(priceNoInCollateral, 0.5 * 1e6, 0.05e18);  // 5% tolerance
+        assertApproxEqRel(priceNoInCollateral, 0.5 * 1e6, 0.05e18); // 5% tolerance
     }
 
     // Helper function to calculate price from sqrtPriceX96
@@ -580,13 +571,11 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 price;
         if (zeroForOne) {
             // If collateral is token0, price = (1/sqrtPrice)^2
-            price = (2**192 * 1e6) / uint256(sqrtPriceX96) ** 2;
+            price = (2 ** 192 * 1e6) / uint256(sqrtPriceX96) ** 2;
         } else {
             // If collateral is token1, price = sqrtPrice^2
-            price = (uint256(sqrtPriceX96) ** 2 * 1e6) / 2**192;
+            price = (uint256(sqrtPriceX96) ** 2 * 1e6) / 2 ** 192;
         }
         return price;
     }
-
-
 }

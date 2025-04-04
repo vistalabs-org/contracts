@@ -1,0 +1,13 @@
+{
+  "chainId": 1301,
+  "deployer": "0x39dc391f8FFE71156212C7c3196Ef09B9C0bdDf8",
+  "collateralToken": "0x125C45450a65a6FE4748F782F9B6ab9f5Fbcf049",
+  "poolManager": "0x00B036B58a818B1BC34d502D3fE730Db729e62AC",
+  "poolSwapTest": "0x9140a78c1A137c7fF1c151EC8231272aF78a99A4",
+  "aiAgentRegistry": "0xFaa36947DE7AEd3026227AEa7D131A230EC0E64B",
+  "aiOracleServiceManagerImpl": "0xe27457B3949b5cf0eE13bce2375E9beE74A0C44c",
+  "aiOracleServiceManagerProxy": "0x5A802dea13147CD9A39a18543D9ef83B6A10d1a5",
+  "aiAgent": "0x8069eB807ABEF565c962D1B627A8f72D0fe1EF09",
+  "poolCreationHelper": "0x97937cEe5c6C30756e80db66Dd9bf3d911f78149",
+  "predictionMarketHook": "0xdb02d9340BfC85196FaAe9f05Bf0F3963dd38880"
+}

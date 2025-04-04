@@ -5,13 +5,14 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import "../OutcomeToken.sol";
 
 enum MarketState {
-    Created,         // Market created, not yet active
-    Active,          // Market is open for trading
-    Closed,          // Market is closed
-    InResolution,    // Resolution process has started (e.g., waiting for oracle)
-    Resolved,        // Final outcome determined, winnings can be claimed
-    Cancelled,       // Market cancelled, collateral can be redeemed
-    Disputed         // Market resolution is disputed
+    Created, // Market created, not yet active
+    Active, // Market is open for trading
+    Closed, // Market is closed
+    InResolution, // Resolution process has started (e.g., waiting for oracle)
+    Resolved, // Final outcome determined, winnings can be claimed
+    Cancelled, // Market cancelled, collateral can be redeemed
+    Disputed // Market resolution is disputed
+
 }
 
 struct Market {
