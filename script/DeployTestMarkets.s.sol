@@ -110,7 +110,7 @@ contract DeployTestMarkets is Script {
         // *** Mint mock collateral to deployer ***
         uint256 collateralToMint = INITIAL_MARKET_COLLATERAL * 2 * 5; // Mint enough for 2 markets + buffer
         collateralToken.mint(deployer, collateralToMint);
-        console.log("Minted", collateralToMint / (10**6), "tUSDC to deployer");
+        console.log("Minted", collateralToMint / (10 ** 6), "tUSDC to deployer");
         // *** End mint ***
 
         // Grant the hook unlimited allowance for the loaded collateral token.
