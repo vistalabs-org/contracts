@@ -289,7 +289,9 @@ contract PredictionMarketAITest is Test, Deployers {
 
         // 4. Verify Hook State
         Market memory market = hook.getMarketById(mId);
-        assertEq(uint8(market.state), uint8(MarketState.InResolution), "Market should be InResolution after enterResolution");
+        assertEq(
+            uint8(market.state), uint8(MarketState.InResolution), "Market should be InResolution after enterResolution"
+        );
 
         // 5. Verify Oracle Task Creation
         assertEq(oracle.latestTaskNum(), taskNumBefore + 1, "Oracle latestTaskNum should have incremented");
@@ -322,7 +324,9 @@ contract PredictionMarketAITest is Test, Deployers {
         // 3. Verify Oracle Task Status and Consensus
         IAIOracleServiceManager.TaskStatus currentTaskStatus = oracle.taskStatus(taskNum);
         bytes32 consensusHash = oracle.consensusResultHash(taskNum);
-        assertEq(uint8(currentTaskStatus), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Oracle task status mismatch");
+        assertEq(
+            uint8(currentTaskStatus), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Oracle task status mismatch"
+        );
         assertEq(consensusHash, expectedResponseHash, "Oracle consensus hash mismatch");
         console.log("Oracle task resolved successfully.");
         console.log("===== Test Completed Successfully ====");

@@ -98,15 +98,17 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
-    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata data)
-        internal view override returns (bytes4, BeforeSwapDelta, uint24)
-    {
+    function _beforeSwap(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        bytes calldata data
+    ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not open for trading");
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
-
 
     function _beforeAddLiquidity(
         address sender,

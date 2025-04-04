@@ -6,14 +6,14 @@
 |----------------------------|----------------------------------------------|
 | PoolManager                | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
 | PoolSwapTest               | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
-| Collateral Token (tUSDC)   | `0x125C45450a65a6FE4748F782F9B6ab9f5Fbcf049` |
-| AIAgentRegistry            | `0xFaa36947DE7AEd3026227AEa7D131A230EC0E64B` |
-| AIOracleServiceManager Impl| `0xe27457B3949b5cf0eE13bce2375E9beE74A0C44c` |
-| AIOracleServiceManager Proxy| `0x5A802dea13147CD9A39a18543D9ef83B6A10d1a5` |
+| Collateral Token (tUSDC)   | `0x85a0086903EDf0a2eA3A1De6441f1bc98a0ddb2e` |
+| AIAgentRegistry            | `0xB70C86f1Ee2Ff1Fd3C2a7c001a431C202E1C2ED7` |
+| AIOracleServiceManager Impl| `0xd033DA368b741FFcd65D678EACdBec0ba90e7250` |
+| AIOracleServiceManager Proxy| `0xe0f96383C4266B55457B70Fe4A00236288b9dA2b` |
 | ProxyAdmin                 | `0xC312320126Be5ba73dcBfAc414999951d70E4729` |
-| AIAgent                    | `0x8069eB807ABEF565c962D1B627A8f72D0fe1EF09` |
-| PoolCreationHelper         | `0x97937cEe5c6C30756e80db66Dd9bf3d911f78149` |
-| PredictionMarketHook       | `0xdb02d9340BfC85196FaAe9f05Bf0F3963dd38880` |
+| AIAgent                    | `0xE0632905E4C0B4181ee01AeB26AFe253B96d410f` |
+| PoolCreationHelper         | `0x83aBB30aCEf747AAE863278008DebFB8dBab0D8A` |
+| PredictionMarketHook       | `0xB774A6C1D493F57fEe18FdAf60F164aB5A2b4880` |
 
 ## Overview
 

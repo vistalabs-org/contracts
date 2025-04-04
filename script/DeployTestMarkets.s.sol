@@ -107,7 +107,13 @@ contract DeployTestMarkets is Script {
     function _createMarkets() internal {
         console.log("\n--- Creating Test Markets ---");
 
-        // Grant the hook unlimited allowance for the new collateral token.
+        // *** Mint mock collateral to deployer ***
+        uint256 collateralToMint = INITIAL_MARKET_COLLATERAL * 2 * 5; // Mint enough for 2 markets + buffer
+        collateralToken.mint(deployer, collateralToMint);
+        console.log("Minted", collateralToMint / (10**6), "tUSDC to deployer");
+        // *** End mint ***
+
+        // Grant the hook unlimited allowance for the loaded collateral token.
         collateralToken.approve(address(hook), type(uint256).max);
         console.log("Approved hook to spend test USDC for market creation");
 
