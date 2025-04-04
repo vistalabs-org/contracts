@@ -50,6 +50,11 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Deploy PoolSwapTest
         poolSwapTest = new PoolSwapTest(manager);
 
+        // create and mint a collateral token
+        // Deploy mock token
+        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
+        collateralToken.mint(address(this), 1000000 * 10 ** 6);
+
         // Deploy PoolModifyLiquidityTest
         poolModifyLiquidityTest = new PoolModifyLiquidityTest(manager);
 
@@ -113,18 +118,13 @@ contract PredictionMarketHookTest is Test, Deployers {
         console.log("Oracle address set on Hook.");
         // --- End Hook Deployment ---
 
-        // create and mint a collateral token
-        // Deploy mock token
-        collateralToken = new ERC20Mock("Test USDC", "USDC", 6);
-
-        // Mint some tokens for testing
-        collateralToken.mint(address(this), 1000000 * 10 ** 6);
-
-        // approve the hook to transfer the tokens
-        collateralToken.approve(address(hook), type(uint256).max);
-
         // Deploy StateView
         stateView = new StateView(manager);
+
+        // *** Approve hook AFTER it has been deployed and assigned ***
+        require(address(hook) != address(0), "Hook address is zero before final approval");
+        collateralToken.approve(address(hook), type(uint256).max);
+        console.log("Approved Hook to spend collateral.");
     }
 
     // Modifier to create a market and return its ID
@@ -340,8 +340,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Create market first
         bytes32 marketId = createTestMarket();
 
-        // ***** ACTIVATE THE MARKET *****
-        // hook.activateMarket(marketId);
+        require(hook.getMarketById(marketId).state == MarketState.Active, "Market not Active before adding liquidity");
 
         // Get market details
         Market memory market = hook.getMarketById(marketId);

@@ -98,18 +98,22 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
-    function _beforeSwap(PoolKey calldata key) internal view returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata data)
+        internal view override returns (bytes4, BeforeSwapDelta, uint24)
+    {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not open for trading");
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function _beforeAddLiquidity(PoolKey calldata key, IPoolManager.ModifyLiquidityParams calldata params)
-        internal
-        view
-        returns (bytes4)
-    {
+
+    function _beforeAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        bytes calldata data
+    ) internal view override returns (bytes4) {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not active for adding liquidity");
@@ -201,6 +205,11 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey);
         poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey);
 
+        require(
+            IERC20(collateral).transferFrom(params.creator, address(this), params.collateralAmount),
+            "Collateral transfer to hook failed"
+        );
+
         // Store market info
         console.log("Storing market info");
         _markets[marketId] = Market({
@@ -220,15 +229,15 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
             curveId: params.curveId
         });
 
-        // Mint YES and NO tokens to the creator instead of this contract
-        mintOutcomeTokens(marketId, params.collateralAmount, params.collateralAddress);
-
-        // Add market ID to the array of all markets
-        _allMarketIds.push(marketId);
-
         // Map both pool IDs to this market ID
         _poolToMarketId[yesPoolKey.toId()] = marketId;
         _poolToMarketId[noPoolKey.toId()] = marketId;
+
+        // Mint initial YES and NO tokens directly to the creator based on the deposited collateral
+        mintOutcomeTokensForCreator(marketId, params.collateralAmount);
+
+        // Add market ID to the array of all markets
+        _allMarketIds.push(marketId);
 
         return marketId;
     }

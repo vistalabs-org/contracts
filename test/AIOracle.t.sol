@@ -232,118 +232,124 @@ contract PredictionMarketAITest is Test, Deployers {
         console.log("===== Test Completed Successfully ====");
     }
 
-    // --- Test: Agent Responds and Market Resolves ---
-    function test_agentRespondsAndMarketResolves() public {
-        console.log("\n===== Test: Agent Responds & Market Resolves ====");
+    // --- NEW Split Test Functions ---
 
-        // 1. Ensure contracts are available (checks at start of test)
-        require(address(hook) != address(0), "Hook not initialized at start of test");
-        require(address(oracle) != address(0), "Oracle not initialized at start of test");
-        require(address(agent) != address(0), "Agent not initialized at start of test");
-        require(address(collateralToken) != address(0), "Collateral token not initialized at start of test");
-        console.log("Required contracts initialized.");
+    /// @notice Tests that creating a market sets its initial state to Active.
+    function test_CreateMarket_SetsActiveState() public {
+        console.log("\n===== Test: Create Market Sets Active State ====");
+        bytes32 mId = createTestMarket();
+        require(mId != bytes32(0), "Market creation failed");
 
-        // 2. Create a new market
-        console.log("----- Creating Market -----");
-        bytes32 testMarketId = createTestMarket();
-        console.log("Market created with ID (hex): %s", vm.toString(testMarketId));
-        require(testMarketId != bytes32(0), "Market creation failed");
+        Market memory market = hook.getMarketById(mId);
+        assertEq(uint8(market.state), uint8(MarketState.Active), "Market should be Active after creation");
+        console.log("===== Test Completed Successfully ====");
+    }
 
-        // 3. Close the market (Active -> Closed)
-        console.log("----- Closing Market (Active -> Closed) -----");
-        try hook.closeMarket(testMarketId) {
-            console.log("Hook market state set to Closed.");
+    /// @notice Tests that closing an active market sets its state to Closed.
+    function test_CloseMarket_SetsClosedState() public {
+        console.log("\n===== Test: Close Market Sets Closed State ====");
+        // 1. Create Market
+        bytes32 mId = createTestMarket();
+        require(hook.getMarketById(mId).state == MarketState.Active, "Market not active initially");
+
+        // 2. Close Market
+        try hook.closeMarket(mId) {
+            console.log("hook.closeMarket called.");
         } catch Error(string memory reason) {
-            Market memory m = hook.getMarketById(testMarketId);
-            string memory stateStr = vm.toString(uint8(m.state));
-            revert(string.concat("ERROR closing market: ", reason, ". Hook State: ", stateStr));
+            revert(string.concat("ERROR closing market: ", reason));
         } catch {
             revert("Unknown error calling hook.closeMarket");
         }
 
-        // 4. Transition Hook Market to InResolution & Create Oracle Task (Closed -> InResolution)
-        console.log("----- Entering Resolution Phase (Hook state change + Oracle task creation) -----");
-        uint32 taskNum = oracle.latestTaskNum(); // Task index will be the current latestTaskNum
-        console.log("Expected Oracle Task #: ", taskNum);
-        try hook.enterResolution(testMarketId) {
-            // Restore enterResolution call
-            console.log("Hook market state set to InResolution, Oracle task creation requested.");
+        // 3. Verify State
+        Market memory market = hook.getMarketById(mId);
+        assertEq(uint8(market.state), uint8(MarketState.Closed), "Market should be Closed after closeMarket call");
+        console.log("===== Test Completed Successfully ====");
+    }
+
+    /// @notice Tests that entering resolution sets state to InResolution and creates an oracle task.
+    function test_EnterResolution_SetsInResolutionState_CreatesOracleTask() public {
+        console.log("\n===== Test: Enter Resolution Creates Oracle Task ====");
+        // 1. Create Market
+        bytes32 mId = createTestMarket();
+
+        // 2. Close Market
+        hook.closeMarket(mId);
+        require(hook.getMarketById(mId).state == MarketState.Closed, "Market not closed before entering resolution");
+
+        // 3. Enter Resolution
+        uint32 taskNumBefore = oracle.latestTaskNum();
+        try hook.enterResolution(mId) {
+            console.log("hook.enterResolution called.");
         } catch Error(string memory reason) {
-            // Check hook state if call fails
-            Market memory m = hook.getMarketById(testMarketId);
-            string memory stateStr = vm.toString(uint8(m.state));
-            string memory errorMsg = string.concat("ERROR entering resolution: ", reason, ". Hook State: ", stateStr);
-            address oracleHookAddr;
-            try oracle.predictionMarketHook() returns (address addr) {
-                oracleHookAddr = addr;
-            } catch {}
-            if (oracleHookAddr != address(0) && oracleHookAddr != address(hook)) {
-                errorMsg = string.concat(
-                    errorMsg,
-                    ". Oracle Hook Addr: ",
-                    vm.toString(oracleHookAddr),
-                    "; Deployed Hook Addr: ",
-                    vm.toString(address(hook))
-                );
-            }
-            revert(errorMsg);
+            revert(string.concat("ERROR entering resolution: ", reason));
         } catch {
-            revert("Unknown error calling hook.enterResolution"); // Corrected error message
+            revert("Unknown error calling hook.enterResolution");
         }
 
-        // Verify Oracle task was actually created by the enterResolution call
-        require(
-            oracle.latestTaskNum() == taskNum + 1, "Oracle latestTaskNum did not increment after enterResolution call"
-        ); // Corrected error message
-        // Optional: Further verify task details if needed via oracle.tasks(taskNum)
+        // 4. Verify Hook State
+        Market memory market = hook.getMarketById(mId);
+        assertEq(uint8(market.state), uint8(MarketState.InResolution), "Market should be InResolution after enterResolution");
 
-        // 5. Simulate Agent responding "YES" (using taskNum obtained before enterResolution)
-        console.log("----- Simulating Agent Response (YES) -----");
+        // 5. Verify Oracle Task Creation
+        assertEq(oracle.latestTaskNum(), taskNumBefore + 1, "Oracle latestTaskNum should have incremented");
+        console.log("===== Test Completed Successfully ====");
+    }
+
+    /// @notice Tests that an agent's response resolves the corresponding task in the Oracle.
+    function test_AgentResponse_ResolvesOracleTask() public {
+        console.log("\n===== Test: Agent Response Resolves Oracle Task ====");
+        // 1. Create Market, Close, Enter Resolution
+        bytes32 mId = createTestMarket();
+        hook.closeMarket(mId);
+        uint32 taskNum = oracle.latestTaskNum(); // Task index will be this value
+        hook.enterResolution(mId);
+        require(hook.getMarketById(mId).state == MarketState.InResolution, "Market not InResolution");
+        require(oracle.latestTaskNum() == taskNum + 1, "Oracle task not created");
+
+        // 2. Simulate Agent responding "YES"
         bytes memory agentResponse = bytes("YES");
         bytes32 expectedResponseHash = keccak256(agentResponse);
-
-        vm.deal(address(this), 1 ether); // Fund test contract for prank gas
         vm.prank(address(agent));
         try oracle.respondToTask(taskNum, agentResponse) {
             console.log("Agent response submitted successfully.");
         } catch Error(string memory reason) {
-            // Log the original reason and agent address
-            console.log("ERROR in respondToTask for Agent:", address(agent));
-            console.log("  Reason:", reason);
-            revert(reason); // Revert with the original reason only
+            revert(string.concat("ERROR submitting agent response: ", reason));
         } catch {
-            console.log("Unknown error in respondToTask call for Agent:", address(agent));
-            {
-                revert("Unknown error submitting agent response");
-            }
+            revert("Unknown error submitting agent response");
         }
 
-        // 6. Verify Oracle Task Status and Consensus
-        console.log("----- Verifying Oracle State -----");
+        // 3. Verify Oracle Task Status and Consensus
         IAIOracleServiceManager.TaskStatus currentTaskStatus = oracle.taskStatus(taskNum);
         bytes32 consensusHash = oracle.consensusResultHash(taskNum);
-
-        console.log("Oracle Task Status (Enum):", uint8(currentTaskStatus));
-        console.log("Oracle Consensus Hash (hex): %s", vm.toString(consensusHash));
-        console.log("Expected Response Hash (hex): %s", vm.toString(expectedResponseHash));
-
-        // Assumes minimumResponses=1 and threshold=10000 in the deployed Oracle
-        assertEq(
-            uint8(currentTaskStatus), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Oracle task status mismatch"
-        );
+        assertEq(uint8(currentTaskStatus), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Oracle task status mismatch");
         assertEq(consensusHash, expectedResponseHash, "Oracle consensus hash mismatch");
-        console.log("Oracle state verified.");
+        console.log("Oracle task resolved successfully.");
+        console.log("===== Test Completed Successfully ====");
+    }
 
-        // 7. Verify Market State in Hook
-        console.log("----- Verifying Hook Market State -----");
-        Market memory market = hook.getMarketById(testMarketId);
-        console.log("Market State in Hook (Enum):", uint8(market.state));
-        console.log("Market Outcome in Hook:", market.outcome);
+    /// @notice Tests that an agent's response (via Oracle) resolves the market in the Hook.
+    function test_AgentResponse_ResolvesHookMarket() public {
+        console.log("\n===== Test: Agent Response Resolves Hook Market ====");
+        // 1. Create Market, Close, Enter Resolution
+        bytes32 mId = createTestMarket();
+        hook.closeMarket(mId);
+        uint32 taskNum = oracle.latestTaskNum();
+        hook.enterResolution(mId);
+        require(hook.getMarketById(mId).state == MarketState.InResolution, "Market not InResolution");
+        require(oracle.latestTaskNum() == taskNum + 1, "Oracle task not created");
 
-        assertEq(uint8(market.state), uint8(MarketState.Resolved), "Market state in Hook mismatch");
+        // 2. Simulate Agent responding "YES"
+        bytes memory agentResponse = bytes("YES");
+        vm.prank(address(agent));
+        oracle.respondToTask(taskNum, agentResponse);
+        // (Oracle state checked in previous test)
+
+        // 3. Verify Hook Market State and Outcome
+        Market memory market = hook.getMarketById(mId);
+        assertEq(uint8(market.state), uint8(MarketState.Resolved), "Market state in Hook should be Resolved");
         assertTrue(market.outcome, "Market outcome should be YES (true)");
-        console.log("Hook market state verified.");
-
+        console.log("Hook market resolved successfully.");
         console.log("===== Test Completed Successfully ====");
     }
 
