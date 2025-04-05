@@ -2,17 +2,17 @@
 
 ## Deployed Contracts (Sepolia)
 
-| Contract                   | Address                                      |
-|----------------------------|----------------------------------------------|
-| PoolManager                | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
-| PoolSwapTest               | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
-| Collateral Token (tUSDC)   | `0x820429aFC00F4E5770e4745f338320E7B626b5bc` |
-| AIAgentRegistry            | `0x59821c2d121bF882580d6E08B3a257dE8e50782B` |
-| AIOracleServiceManager Impl| `0xdfd712572a8B7e1FB3db04B196a315a5098d5d06` |
-| AIOracleServiceManager Proxy| `0x5D30682c769d3F302e62b3E7F978752b7FD3b177` |
-| AIAgent                    | `0xc0dF7c888B8888A2d78da6c15e53828e65B3B7f4` |
-| PoolCreationHelper         | `0xd016a9f6708eF9feeD51fCD542C1d5EAf73e3eEF` |
-| PredictionMarketHook       | `0x51abe2CeedC53bCeDf9F1F257f30317A15124880` |
+| Contract                     | Address                                      |
+|------------------------------|----------------------------------------------|
+| PoolManager                  | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
+| PoolSwapTest                 | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
+| Collateral Token (tUSDC)     | `0xa8BEfd0d870df3Cc2C656975de858aae87216B4a` |
+| AIAgentRegistry              | `0x744E674901428fc0169C69c5717001e6DA9DA85E` |
+| AIOracleServiceManager Impl  | `0x0e8eD93C7e134722d34bC4344B9DCECd144f0197` |
+| AIOracleServiceManager Proxy | `0x7fA0A75d79b25E290e0427F5305fE25d578D8c56` |
+| AIAgent                      | `0x518295ddBF4A0c7953677BbF3d40c2Bf4FAbC62e` |
+| PoolCreationHelper           | `0xDeb20d4a6cF1B3557A9cf1cF63ACc957Cc00010d` |
+| PredictionMarketHook         | `0xEc3aA97150992e6a540b707E6C45dd9945AeC880` |
 
 ## Overview
 

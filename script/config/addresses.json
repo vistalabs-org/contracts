@@ -1,13 +1,13 @@
 {
   "chainId": 1301,
   "deployer": "0x39dc391f8FFE71156212C7c3196Ef09B9C0bdDf8",
-  "collateralToken": "0x820429aFC00F4E5770e4745f338320E7B626b5bc",
+  "collateralToken": "0xa8BEfd0d870df3Cc2C656975de858aae87216B4a",
   "poolManager": "0x00B036B58a818B1BC34d502D3fE730Db729e62AC",
   "poolSwapTest": "0x9140a78c1A137c7fF1c151EC8231272aF78a99A4",
-  "aiAgentRegistry": "0x59821c2d121bF882580d6E08B3a257dE8e50782B",
-  "aiOracleServiceManagerImpl": "0xdfd712572a8B7e1FB3db04B196a315a5098d5d06",
-  "aiOracleServiceManagerProxy": "0x5D30682c769d3F302e62b3E7F978752b7FD3b177",
-  "aiAgent": "0xc0dF7c888B8888A2d78da6c15e53828e65B3B7f4",
-  "poolCreationHelper": "0xd016a9f6708eF9feeD51fCD542C1d5EAf73e3eEF",
-  "predictionMarketHook": "0x51abe2CeedC53bCeDf9F1F257f30317A15124880"
+  "aiAgentRegistry": "0x744E674901428fc0169C69c5717001e6DA9DA85E",
+  "aiOracleServiceManagerImpl": "0x0e8eD93C7e134722d34bC4344B9DCECd144f0197",
+  "aiOracleServiceManagerProxy": "0x7fA0A75d79b25E290e0427F5305fE25d578D8c56",
+  "aiAgent": "0x518295ddBF4A0c7953677BbF3d40c2Bf4FAbC62e",
+  "poolCreationHelper": "0xDeb20d4a6cF1B3557A9cf1cF63ACc957Cc00010d",
+  "predictionMarketHook": "0xEc3aA97150992e6a540b707E6C45dd9945AeC880"
 }
