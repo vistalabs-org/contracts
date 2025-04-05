@@ -6,6 +6,7 @@ import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {CreateMarketParams} from "../src/types/MarketTypes.sol";
 import "forge-std/console.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 
 // Uniswap V4 Core libraries & interfaces
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
@@ -21,7 +22,9 @@ import {MarketState} from "../src/types/MarketTypes.sol"; // Keep MarketState if
  * @dev Assumes addresses.json exists and is populated by DeployUnichainSepolia.s.sol.
  */
 contract DeployTestMarkets is Script {
+    using stdJson for string;
     // --- Core Contracts (Loaded) ---
+
     PredictionMarketHook public hook;
     PoolManager public manager;
     PoolCreationHelper public poolCreationHelper;
