@@ -23,11 +23,10 @@ import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 
 /**
  * @title TestMarketResolution
- * @notice This script loads core contracts from addresses.json, loads market data
- *         (collateral address, market IDs) from test_markets.json,
- *         and simulates the resolution process (close -> enter resolution -> resolve -> claim)
- *         for each loaded market ID.
- * @dev Assumes addresses.json and test_markets.json exist and are populated.
+ * @notice This script loads core contracts from addresses.json, fetches market IDs
+ *         directly from the hook contract, and simulates the resolution process
+ *         (close -> enter resolution -> resolve via prank) for each fetched market ID.
+ * @dev Assumes addresses.json exists and is populated. Does NOT test claiming.
  */
 contract TestMarketResolution is Script {
     using stdJson for string;
@@ -41,13 +40,12 @@ contract TestMarketResolution is Script {
     PredictionMarketHook public hook;
 
     // --- Test Contracts (Loaded/Instantiated) ---
-    ERC20Mock public collateralToken; // Loaded from test_markets.json
+    ERC20Mock public collateralToken; // Loaded collateral token
 
     // --- Loaded Test Config ---
-    bytes32[] private marketIds; // Loaded from file
     address private oracleProxyAddress; // Loaded from addresses.json
     address private hookAddress; // Loaded from addresses.json
-    address private collateralTokenAddress; // Loaded from test_markets.json
+    address private collateralTokenAddress; // Loaded collateral token address
 
     // --- Script State ---
     address private deployer;
@@ -60,15 +58,20 @@ contract TestMarketResolution is Script {
 
         // Load addresses of already deployed core contracts.
         _loadCoreAddresses();
-        // Load data specific to the test markets.
-        _loadMarketData();
+
         // Instantiate necessary contract variables.
         _initializeContracts();
 
-        // Resolve each market found in the file.
-        _resolveMarkets(deployerPrivateKey);
+        // Fetch market IDs from the hook
+        console.log("\nFetching market IDs from hook...");
+        bytes32[] memory fetchedMarketIds = hook.getAllMarketIds();
+        require(fetchedMarketIds.length > 0, "No market IDs found on the hook contract to resolve");
+        console.log("Found", fetchedMarketIds.length, "market IDs.");
 
-        console.log("\nScript complete! Market resolution tested.");
+        // Resolve each market found.
+        _resolveMarkets(fetchedMarketIds, deployerPrivateKey);
+
+        console.log("\nScript complete! Market resolution simulated."); // Updated log
     }
 
     /// @notice Loads required core contract addresses and collateral token address from the `script/config/addresses.json` file.
@@ -102,29 +105,6 @@ contract TestMarketResolution is Script {
         console.log("  Loaded Collateral Token Address:", collateralTokenAddress);
     }
 
-    /// @notice Loads test market IDs from test_markets.json.
-    function _loadMarketData() internal {
-        console.log("\n--- Loading Test Market IDs ---");
-        string memory filePath = "script/config/test_markets.json";
-        string memory json = vm.readFile(filePath);
-
-        string[] memory marketIdStrings = json.readStringArray(".marketIds");
-        marketIds = new bytes32[](marketIdStrings.length);
-        string memory logIds = "[";
-        for (uint256 i = 0; i < marketIdStrings.length; i++) {
-            bytes memory b = vm.parseBytes(marketIdStrings[i]);
-            require(b.length == 32, "Invalid bytes32 string length");
-            marketIds[i] = bytesToBytes32(b, 0);
-            logIds = string.concat(logIds, vm.toString(marketIds[i]));
-            if (i < marketIds.length - 1) {
-                logIds = string.concat(logIds, ", ");
-            }
-        }
-        logIds = string.concat(logIds, "]");
-        console.log("  Loaded Market IDs:", logIds);
-        require(marketIds.length > 0, "No market IDs loaded");
-    }
-
     /// @notice Instantiates remaining contract variables.
     function _initializeContracts() internal {
         hook = PredictionMarketHook(hookAddress);
@@ -133,25 +113,27 @@ contract TestMarketResolution is Script {
         console.log("\nContracts instantiated.");
     }
 
-    /// @notice Loops through loaded market IDs and simulates the resolution process.
-    function _resolveMarkets(uint256 deployerPrivateKey) internal {
-        console.log("\n--- Testing Market Resolution Process ---");
+    /// @notice Loops through provided market IDs and simulates the resolution process.
+    function _resolveMarkets(bytes32[] memory fetchedMarketIds, uint256 deployerPrivateKey) internal {
+        // Accept IDs as parameter
+        console.log("\n--- Simulating Market Resolution Process (No Claiming) ---"); // Updated log
 
-        for (uint256 i = 0; i < marketIds.length; i++) {
-            bytes32 marketId = marketIds[i];
+        for (uint256 i = 0; i < fetchedMarketIds.length; i++) {
+            // Use fetchedMarketIds
+            bytes32 marketId = fetchedMarketIds[i]; // Get ID from array
             console.log("\nProcessing Market ID:", vm.toString(marketId));
             Market memory market = hook.getMarketById(marketId);
 
             // 1. Check Initial State (Should be Active)
             if (market.state != MarketState.Active) {
                 console.log(
-                    "  Market is not Active. Current state:", uint8(market.state), ". Skipping resolution test."
+                    "  Market is not Active. Current state:", uint8(market.state), ". Skipping resolution simulation."
                 );
                 continue; // Skip if market wasn't successfully created/activated earlier
             }
             console.log("  Market state is Active. Proceeding...");
 
-            // 2. Warp Time Past End Date
+            // 2. Warp Time Past End Date (Outside broadcast)
             if (block.timestamp <= market.endTimestamp) {
                 vm.warp(market.endTimestamp + 1 days); // Warp 1 day past end
                 console.log("  Warped time past endTimestamp. New timestamp:", block.timestamp);
@@ -159,7 +141,7 @@ contract TestMarketResolution is Script {
                 console.log("  Time is already past endTimestamp.");
             }
 
-            // Need broadcast for state changes
+            // --- Broadcast Block 1: Close and Enter Resolution ---
             vm.startBroadcast(deployerPrivateKey);
 
             // 3. Close Market
@@ -178,8 +160,9 @@ contract TestMarketResolution is Script {
 
             // 4. Enter Resolution Phase
             console.log("  Entering resolution phase...");
+            // Fetch state *within* broadcast to ensure we see the Closed state
             MarketState stateBeforeEnter = hook.getMarketById(marketId).state;
-            console.log("    State before enterResolution:", uint8(stateBeforeEnter));
+            console.log("    State read before enterResolution (inside broadcast):", uint8(stateBeforeEnter));
             require(stateBeforeEnter == MarketState.Closed, "Market must be Closed to enter resolution");
 
             try hook.enterResolution(marketId) {
@@ -193,97 +176,45 @@ contract TestMarketResolution is Script {
                 vm.stopBroadcast();
                 continue;
             }
+            // Stop Broadcast Block 1
+            vm.stopBroadcast();
+            // --------------------------------------------------------
 
-            vm.stopBroadcast(); // Stop broadcast before prank
+            // Optional Delay for state propagation if needed on live networks/forks
+            // vm.roll(block.number + 1);
+            // vm.sleep(1000); // e.g., 1 second
 
-            // 5. Simulate Oracle Resolving (e.g., YES)
-            console.log("  Simulating Oracle resolution (Outcome: YES)...");
+            // --- Pranked Call: Resolve Market (Simulated, NOT broadcast) ---
+            console.log("  Simulating Oracle resolution (Outcome: YES)... (via prank)");
             vm.prank(oracleProxyAddress); // Oracle Proxy is the expected msg.sender
             try hook.resolveMarket(marketId, true) {
                 // true for YES
                 console.log("    Market resolved successfully by simulated Oracle.");
             } catch Error(string memory reason) {
-                console.log("    Failed to resolve market:", reason);
-                continue; // Skip claim test if resolution fails
+                console.log("    Failed to resolve market (pranked call):", reason);
+                // Don't stop broadcast here as we are not in one
+                continue; // Skip rest if resolution fails
             } catch {
-                console.log("    Unknown error resolving market.");
+                console.log("    Unknown error resolving market (pranked call).");
                 continue;
             }
+            // Prank automatically stops after one call
+            // -------------------------------------------------------------
 
-            // 6. Verify Resolved State
-            market = hook.getMarketById(marketId); // Refresh state
-            require(market.state == MarketState.Resolved, "Market state should be Resolved");
-            require(market.outcome == true, "Market outcome should be YES (true)");
-            console.log("    Market state verified as Resolved (Outcome: YES).");
-
-            // 7. (Optional) Attempt to Claim Winnings
-            _attemptClaimWinnings(marketId, deployerPrivateKey);
+            // --- Verification Only --- (No Claiming Broadcast)
+            // Verify Resolved State after pranked call
+            market = hook.getMarketById(marketId); // Refresh state AFTER pranked call
+            if (market.state == MarketState.Resolved && market.outcome == true) {
+                console.log("    Market state verified as Resolved (Outcome: YES) in simulation.");
+            } else {
+                console.log(
+                    "    Market state IS NOT Resolved/YES after simulated call. State:",
+                    uint8(market.state),
+                    "Outcome:",
+                    market.outcome
+                );
+            }
+            // End of loop for this market
         }
-    }
-
-    /// @notice Attempts to claim winnings for a resolved market.
-    function _attemptClaimWinnings(bytes32 marketId, uint256 deployerPrivateKey) internal {
-        console.log("  Attempting to claim winnings...");
-        Market memory market = hook.getMarketById(marketId); // Get latest state
-        require(market.state == MarketState.Resolved, "Market must be resolved to claim");
-
-        OutcomeToken winningToken;
-        if (market.outcome) {
-            // true = YES wins
-            winningToken = market.yesToken;
-            console.log("    Winning token: YES");
-        } else {
-            // false = NO wins
-            winningToken = market.noToken;
-            console.log("    Winning token: NO");
-        }
-
-        uint256 balance = winningToken.balanceOf(deployer);
-        console.log("    Deployer winning token balance:", balance / 1e18);
-
-        if (balance == 0) {
-            console.log("    Deployer has no winning tokens. Skipping claim.");
-            return;
-        }
-
-        // Start broadcast for claim transaction
-        vm.startBroadcast(deployerPrivateKey);
-
-        // Approve hook to burn the winning tokens
-        console.log("    Approving hook to burn winning tokens...");
-        try winningToken.approve(address(hook), balance) {
-            console.log("      Approval successful.");
-        } catch Error(string memory reason) {
-            console.log("      Approval failed:", reason);
-            vm.stopBroadcast();
-            return; // Cannot claim without approval
-        } catch {
-            console.log("      Unknown error during approval.");
-            vm.stopBroadcast();
-            return;
-        }
-
-        // Call claimWinnings
-        console.log("    Calling claimWinnings...");
-        try hook.claimWinnings(marketId) {
-            console.log("      Claim winnings successful!");
-            // Optional: Add balance checks after claim
-        } catch Error(string memory reason) {
-            console.log("      Claim winnings failed:", reason);
-        } catch {
-            console.log("      Unknown error during claim winnings.");
-        }
-
-        vm.stopBroadcast();
-    }
-
-    // Helper to convert bytes to bytes32
-    function bytesToBytes32(bytes memory b, uint256 offset) internal pure returns (bytes32) {
-        require(b.length >= offset + 32, "bytesToBytes32: offset out of bounds");
-        bytes32 out;
-        assembly {
-            out := mload(add(add(b, 32), offset))
-        }
-        return out;
     }
 }

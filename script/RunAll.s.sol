@@ -17,6 +17,11 @@ import "forge-std/console.sol";
  *      forge script script/RunAll.s.sol -vv --ffi
  */
 contract RunAll is Script {
+    // Define error patterns as bytes constants
+    bytes internal constant ERROR_BYTES = bytes("Error:");
+    bytes internal constant FAILED_BYTES = bytes("[Failed]");
+    bytes internal constant PANIC_BYTES = bytes("panic:");
+
     function run() public {
         // 1. Get required environment variables
         string memory rpcUrl = vm.envString("UNISWAP_SEPOLIA_RPC_URL");
@@ -24,7 +29,6 @@ contract RunAll is Script {
 
         require(bytes(rpcUrl).length > 0, "Error: RPC_URL environment variable not set.");
         require(bytes(gasPrice).length > 0, "Error: GAS_PRICE environment variable not set.");
-        // We don't read the PK here, but sub-scripts require it to be set in the environment.
         require(
             bytes(vm.envString("UNISWAP_SEPOLIA_PK")).length > 0,
             "Error: UNISWAP_SEPOLIA_PK environment variable not set."
@@ -40,7 +44,7 @@ contract RunAll is Script {
         scriptsToRun[1] = "script/DeployTestMarkets.s.sol";
         scriptsToRun[2] = "script/AddLiquidity.s.sol";
         scriptsToRun[3] = "script/TestMarketSwap.s.sol";
-        scriptsToRun[4] = "script/TestMarketResolution.s.sol";
+        scriptsToRun[4] = "script/TestMarketResolution.s.sol:TestMarketResolution";
 
         // 3. Execute scripts sequentially using vm.ffi()
         for (uint256 i = 0; i < scriptsToRun.length; i++) {
@@ -49,39 +53,76 @@ contract RunAll is Script {
             console.log("============================================================");
 
             // Construct the command arguments array for vm.ffi
-            string[] memory cmd = new string[](9); // forge script <path> --rpc-url <url> --broadcast -vv --gas-price <price>
+            string[] memory cmd = new string[](13);
             cmd[0] = "forge";
             cmd[1] = "script";
             cmd[2] = scriptsToRun[i];
             cmd[3] = "--rpc-url";
             cmd[4] = rpcUrl;
             cmd[5] = "--broadcast";
-            cmd[6] = "-vv"; // Use verbosity to see sub-script logs
+            cmd[6] = "-vvv";
             cmd[7] = "--gas-price";
             cmd[8] = gasPrice;
+            cmd[9] = "--retries";
+            cmd[10] = "3";
+            cmd[11] = "--delay";
+            cmd[12] = "5";
 
             // Execute the command via FFI
-            bytes memory output = vm.ffi(cmd);
+            bytes memory outputBytes = vm.ffi(cmd);
 
-            // Log the output from the executed script
+            // Log the output from the executed script as a string
             console.log("--- Script Output ---");
-            console.logBytes(output);
+            console.log(string(outputBytes));
             console.log("--- End Script Output ---");
 
-            // Basic check for failure keywords in output (optional, can be brittle)
-            // string memory outputStr = string(output);
-            // require(!stdstring.contains(outputStr, "Error:") &&
-            //         !stdstring.contains(outputStr, "[Failed]") &&
-            //         !stdstring.contains(outputStr, "panic:"),
-            //         string.concat("Sub-script failed: ", scriptsToRun[i]));
+            // Basic check for failure keywords in output using bytes comparison
+            require(
+                !bytesContains(outputBytes, ERROR_BYTES) && !bytesContains(outputBytes, FAILED_BYTES)
+                    && !bytesContains(outputBytes, PANIC_BYTES),
+                string.concat("Sub-script failed: ", scriptsToRun[i])
+            );
 
             console.log("Finished script:", scriptsToRun[i]);
-            // Optional: Add a small delay between scripts if needed, e.g., for RPC node syncing
             vm.sleep(2000); // Sleep 2 seconds (2000 ms)
         }
 
         console.log("\n============================================================");
         console.log("All scripts executed successfully.");
         console.log("============================================================");
+    }
+
+    /**
+     * @notice Checks if a byte sequence `sub` is contained within `source`.
+     * @param source The bytes to search within.
+     * @param sub The bytes to search for.
+     * @return true if `sub` is found in `source`, false otherwise.
+     */
+    function bytesContains(bytes memory source, bytes memory sub) internal pure returns (bool) {
+        if (source.length < sub.length || sub.length == 0) {
+            return false;
+        }
+        // OPTIMIZATION: If lengths are equal, just compare directly
+        if (source.length == sub.length) {
+            return keccak256(source) == keccak256(sub);
+        }
+
+        // Iterate through the source bytes
+        for (uint256 i = 0; i <= source.length - sub.length; i++) {
+            bool foundMatch = true;
+            // Check if the substring matches at the current position
+            for (uint256 j = 0; j < sub.length; j++) {
+                if (source[i + j] != sub[j]) {
+                    foundMatch = false;
+                    break;
+                }
+            }
+            // If we found a match, return true
+            if (foundMatch) {
+                return true;
+            }
+        }
+        // No match found
+        return false;
     }
 }

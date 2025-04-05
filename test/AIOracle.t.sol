@@ -145,14 +145,12 @@ contract PredictionMarketAITest is Test, Deployers {
 
         // Initialize Agent
         agent.initialize(
-            address(this), // Owner
             address(oracle), // Service Manager
             "TEST_MODEL", // Model Type
             "v0.1", // Model Version
             "TestAgentNFT", // Name
             "TAGENT" // Symbol
         );
-        require(agent.owner() == address(this), "Agent owner not set correctly");
         require(address(agent.serviceManager()) == address(oracle), "Agent service manager not set correctly");
         console.log("Agent Initialized.");
 

@@ -136,7 +136,6 @@ contract DeployUniswapSepolia is Script {
         agent = new AIAgent();
         console.log("Deployed AIAgent at:", address(agent));
         agent.initialize(
-            deployer, // _initialOwner
             oracleProxyAddress, // _serviceManager (the actual Oracle proxy)
             "GPT-4", // _modelType
             "v1.0", // _modelVersion

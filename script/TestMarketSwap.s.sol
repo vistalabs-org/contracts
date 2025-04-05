@@ -22,9 +22,9 @@ import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol
 
 /**
  * @title TestMarketSwap
- * @notice Loads core contracts and market data, then executes a test swap
- *         (Collateral -> YES Token) in the first available test market pool.
- * @dev Assumes addresses.json and test_markets.json exist and are populated.
+ * @notice Loads core contracts and collateral, fetches market IDs from the hook,
+ *         then executes a test swap (Collateral -> YES Token) in the first available test market pool.
+ * @dev Assumes addresses.json exists and is populated.
  *      Requires the target market to have liquidity added (e.g., by AddLiquidity.s.sol).
  */
 contract TestMarketSwap is Script {
@@ -38,7 +38,6 @@ contract TestMarketSwap is Script {
 
     // --- Loaded Test Config ---
     ERC20Mock public collateralToken;
-    bytes32[] private marketIds;
     address private hookAddress; // Loaded from addresses.json
     address private managerAddress; // Loaded from addresses.json
     address private swapRouterAddress; // Loaded from addresses.json
@@ -55,15 +54,19 @@ contract TestMarketSwap is Script {
 
         // Load addresses.
         _loadCoreAddresses();
-        _loadMarketData();
 
         // Instantiate contracts.
         _initializeContracts();
 
+        // Fetch Market IDs directly from the hook
+        console.log("\nFetching market IDs from hook...");
+        bytes32[] memory fetchedMarketIds = hook.getAllMarketIds();
+        require(fetchedMarketIds.length > 0, "No market IDs found on the hook contract to test swap");
+        console.log("Found", fetchedMarketIds.length, "market IDs.");
+
         // Select the first market for the swap test.
-        require(marketIds.length > 0, "No market IDs loaded to test swap");
-        bytes32 targetMarketId = marketIds[0];
-        console.log("\n--- Testing Swap on Market ID:", vm.toString(targetMarketId), "---");
+        bytes32 targetMarketId = fetchedMarketIds[0];
+        console.log("\n--- Testing Swap on First Available Market ID:", vm.toString(targetMarketId), "---");
 
         // Get market details.
         Market memory market = hook.getMarketById(targetMarketId);
@@ -117,31 +120,6 @@ contract TestMarketSwap is Script {
         console.log("  Loaded PoolManager Address:", managerAddress);
         console.log("  Loaded PoolSwapTest Address:", swapRouterAddress);
         console.log("  Loaded Collateral Token Address:", collateralTokenAddress);
-    }
-
-    /// @notice Loads test market IDs from test_markets.json.
-    function _loadMarketData() internal {
-        console.log("\n--- Loading Test Market IDs ---");
-        string memory filePath = "script/config/test_markets.json";
-        string memory json = vm.readFile(filePath);
-
-        // Removed loading collateral token address from here
-
-        string[] memory marketIdStrings = json.readStringArray(".marketIds");
-        marketIds = new bytes32[](marketIdStrings.length);
-        string memory logIds = "[";
-        for (uint256 i = 0; i < marketIdStrings.length; i++) {
-            bytes memory b = vm.parseBytes(marketIdStrings[i]);
-            require(b.length == 32, "Invalid bytes32 string length");
-            marketIds[i] = bytesToBytes32(b, 0);
-            logIds = string.concat(logIds, vm.toString(marketIds[i]));
-            if (i < marketIdStrings.length - 1) {
-                logIds = string.concat(logIds, ", ");
-            }
-        }
-        logIds = string.concat(logIds, "]");
-        console.log("  Loaded Market IDs:", logIds);
-        require(marketIds.length > 0, "No market IDs loaded");
     }
 
     /// @notice Instantiates remaining contract variables.
@@ -221,15 +199,5 @@ contract TestMarketSwap is Script {
             console.logBytes(lowLevelData);
             console.log("Swap failed with low-level data.");
         }
-    }
-
-    // Helper to convert bytes to bytes32
-    function bytesToBytes32(bytes memory b, uint256 offset) internal pure returns (bytes32) {
-        require(b.length >= offset + 32, "bytesToBytes32: offset out of bounds");
-        bytes32 out;
-        assembly {
-            out := mload(add(add(b, 32), offset))
-        }
-        return out;
     }
 }

@@ -6,7 +6,6 @@ import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
 import {CreateMarketParams} from "../src/types/MarketTypes.sol";
 import "forge-std/console.sol";
-import {stdJson} from "forge-std/StdJson.sol";
 
 // Uniswap V4 Core libraries & interfaces
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
@@ -18,29 +17,23 @@ import {MarketState} from "../src/types/MarketTypes.sol"; // Keep MarketState if
 /**
  * @title DeployTestMarkets
  * @notice This script loads existing core contracts (Hook, PoolManager, PoolCreationHelper)
- *         from addresses.json, deploys a new ERC20Mock token for test collateral,
- *         creates two new prediction markets using the loaded hook and this fresh collateral,
- *         and saves the new collateral address and market IDs to test_markets.json.
+ *         from addresses.json, creates two new prediction markets using the loaded hook.
  * @dev Assumes addresses.json exists and is populated by DeployUnichainSepolia.s.sol.
- *      Requires write permission for test_markets.json in foundry.toml.
  */
 contract DeployTestMarkets is Script {
-    using stdJson for string;
-
     // --- Core Contracts (Loaded) ---
     PredictionMarketHook public hook;
     PoolManager public manager;
     PoolCreationHelper public poolCreationHelper;
 
-    // --- Test Contracts (Deployed by this script) ---
-    ERC20Mock public collateralToken; // A *new* mock ERC20 token deployed for test collateral.
+    // --- Test Contracts (Loaded) ---
+    ERC20Mock public collateralToken; // Loaded collateral token.
 
     // --- Configuration ---
     uint256 public constant INITIAL_MARKET_COLLATERAL = 100 * 1e6; // 100 USDC (assuming 6 decimals) collateral for market creation.
 
     // --- Script State ---
     address private deployer; // Address executing the script.
-    bytes32[] private createdMarketIds; // To store market IDs generated in this run.
 
     /// @notice Main script execution function.
     function run() public {
@@ -62,9 +55,6 @@ contract DeployTestMarkets is Script {
 
         // Stop broadcasting transactions.
         vm.stopBroadcast();
-
-        // Save the deployed collateral address and market IDs.
-        _saveMarketData();
 
         console.log("\nScript complete! Test markets created.");
     }
@@ -138,8 +128,6 @@ contract DeployTestMarkets is Script {
         require(state1 == MarketState.Active, "Market 1 not immediately active after creation!");
         // *** End check ***
 
-        createdMarketIds.push(marketId1);
-
         // --- Market 2 ---
         CreateMarketParams memory params2 = CreateMarketParams({
             oracle: deployer,
@@ -160,51 +148,5 @@ contract DeployTestMarkets is Script {
         console.log("  Market 2 immediate state check:", uint8(state2));
         require(state2 == MarketState.Active, "Market 2 not immediately active after creation!");
         // *** End check ***
-
-        createdMarketIds.push(marketId2);
-    }
-
-    /// @notice Saves the created market IDs to test_markets.json.
-    function _saveMarketData() internal {
-        console.log("\n--- Saving Test Market Data ---");
-        string memory filePath = "script/config/test_markets.json";
-
-        // Manually construct the JSON string for market IDs array only
-        string memory jsonOutput = "{\n"; // Start object
-
-        // Add market IDs array
-        jsonOutput = string.concat(jsonOutput, "  \"marketIds\": [\n");
-        for (uint256 i = 0; i < createdMarketIds.length; i++) {
-            jsonOutput = string.concat(
-                jsonOutput,
-                "    \"", // Indent and open quote
-                vm.toString(createdMarketIds[i]),
-                "\"" // Close quote
-            );
-            if (i < createdMarketIds.length - 1) {
-                jsonOutput = string.concat(jsonOutput, ",\n"); // Add comma and newline if not last element
-            } else {
-                jsonOutput = string.concat(jsonOutput, "\n"); // Just newline if last element
-            }
-        }
-        jsonOutput = string.concat(jsonOutput, "  ]\n"); // Close array
-        jsonOutput = string.concat(jsonOutput, "}"); // Close object
-
-        // Write the manually constructed JSON string to the file.
-        vm.writeFile(filePath, jsonOutput);
-
-        console.log("Test market IDs saved to:", filePath);
-        // Removed logging of collateral token address here as it's not saved in this file
-
-        // Log market IDs
-        string memory idsLog = "[";
-        for (uint256 i = 0; i < createdMarketIds.length; i++) {
-            idsLog = string.concat(idsLog, vm.toString(createdMarketIds[i]));
-            if (i < createdMarketIds.length - 1) {
-                idsLog = string.concat(idsLog, ", ");
-            }
-        }
-        idsLog = string.concat(idsLog, "]");
-        console.log("  Market IDs:", idsLog);
     }
 }

@@ -40,7 +40,6 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
 
     /**
      * @dev Initializes the contract.
-     * @param _initialOwner The initial owner of the contract.
      * @param _serviceManager Address of the oracle service manager.
      * @param _modelType The type of AI model used by this agent.
      * @param _modelVersion The version of the AI model.
@@ -48,7 +47,6 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param _symbol The symbol for the ERC721 token.
      */
     function initialize(
-        address _initialOwner,
         address _serviceManager,
         string memory _modelType,
         string memory _modelVersion,
@@ -56,7 +54,6 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
         string memory _symbol
     ) external initializer {
         __ERC721_init(_name, _symbol);
-        __Ownable_init(_initialOwner);
 
         require(_serviceManager != address(0), "Invalid service manager address");
         serviceManager = IAIOracleServiceManager(_serviceManager);
