@@ -34,7 +34,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
     uint256 public totalRewardsEarned;
 
     // Events
-    event TaskProcessed(uint32 indexed taskIndex, bytes signature);
+    event TaskProcessed(uint32 indexed taskIndex, bool decision);
     event StatusChanged(AgentStatus oldStatus, AgentStatus newStatus);
     event RewardReceived(uint256 amount, uint32 taskIndex);
 
@@ -85,22 +85,30 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
     /**
      * @dev Process a task and submit the agent's response
      * @param taskIndex The task index in the service manager
-     * @param signature The signature representing the agent's response
+     * @param decision The agent's boolean decision (true for YES, false for NO)
      */
-    function processTask(uint32 taskIndex, bytes memory signature) external onlyOwner {
+    function processTask(uint32 taskIndex, bool decision) external onlyOwner {
         require(status == AgentStatus.Active, "Agent is not active");
 
-        // Get the task from the manager by index
+        // Get the task from the manager by index (optional check, Oracle Manager also checks)
         bytes32 taskHash = serviceManager.allTaskHashes(taskIndex);
         require(taskHash != bytes32(0), "Task does not exist");
 
-        // Submit the agent's response to the service manager
-        serviceManager.respondToTask(taskIndex, signature);
+        // Convert boolean decision to bytes ("YES" or "NO")
+        bytes memory responseData;
+        if (decision) {
+            responseData = bytes("YES");
+        } else {
+            responseData = bytes("NO");
+        }
+
+        // Submit the agent's response data to the service manager
+        serviceManager.respondToTask(taskIndex, responseData);
 
         // Update agent stats
         tasksCompleted++;
 
-        emit TaskProcessed(taskIndex, signature);
+        emit TaskProcessed(taskIndex, decision);
     }
 
     /**
