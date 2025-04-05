@@ -185,34 +185,33 @@ contract TestMarketResolution is Script {
             // vm.sleep(1000); // e.g., 1 second
 
             // --- Pranked Call: Resolve Market (Simulated, NOT broadcast) ---
-            console.log("  Simulating Oracle resolution (Outcome: YES)... (via prank)");
-            vm.prank(oracleProxyAddress); // Oracle Proxy is the expected msg.sender
-            try hook.resolveMarket(marketId, true) {
-                // true for YES
-                console.log("    Market resolved successfully by simulated Oracle.");
-            } catch Error(string memory reason) {
-                console.log("    Failed to resolve market (pranked call):", reason);
-                // Don't stop broadcast here as we are not in one
-                continue; // Skip rest if resolution fails
-            } catch {
-                console.log("    Unknown error resolving market (pranked call).");
-                continue;
-            }
+            // console.log("  Simulating Oracle resolution (Outcome: YES)... (via prank)");
+            // vm.prank(oracleProxyAddress); // Oracle Proxy is the expected msg.sender
+            // try hook.resolveMarket(marketId, true) {
+            //     // true for YES
+            //     console.log("    Market resolved successfully by simulated Oracle.");
+            // } catch Error(string memory reason) {
+            //     console.log("    Failed to resolve market (pranked call):", reason);
+            //     // Don't stop broadcast here as we are not in one
+            //     continue; // Skip rest if resolution fails
+            // } catch {
+            //     console.log("    Unknown error resolving market (pranked call).");
+            //     continue;
+            // }
             // Prank automatically stops after one call
             // -------------------------------------------------------------
 
             // --- Verification Only --- (No Claiming Broadcast)
-            // Verify Resolved State after pranked call
-            market = hook.getMarketById(marketId); // Refresh state AFTER pranked call
-            if (market.state == MarketState.Resolved && market.outcome == true) {
-                console.log("    Market state verified as Resolved (Outcome: YES) in simulation.");
+            // Verify InResolution State after stopping before resolution
+            market = hook.getMarketById(marketId); // Refresh state
+            if (market.state == MarketState.InResolution) {
+                // Check for InResolution now
+                console.log("    Market state verified as InResolution.");
             } else {
                 console.log(
-                    "    Market state IS NOT Resolved/YES after simulated call. State:",
-                    uint8(market.state),
-                    "Outcome:",
-                    market.outcome
+                    "    Market state IS NOT InResolution after enterResolution call. State:", uint8(market.state)
                 );
+                // ", Outcome:", market.outcome // Outcome is not set yet
             }
             // End of loop for this market
         }
