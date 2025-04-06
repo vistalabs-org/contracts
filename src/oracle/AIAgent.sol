@@ -66,7 +66,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @dev Set the agent's status
      * @param _status New status for the agent
      */
-    function setStatus(AgentStatus _status) external onlyOwner {
+    function setStatus(AgentStatus _status) external {
         AgentStatus oldStatus = status;
         status = _status;
         emit StatusChanged(oldStatus, _status);
@@ -77,7 +77,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param _modelType New model type
      * @param _modelVersion New model version
      */
-    function updateModelInfo(string memory _modelType, string memory _modelVersion) external onlyOwner {
+    function updateModelInfo(string memory _modelType, string memory _modelVersion) external {
         modelType = _modelType;
         modelVersion = _modelVersion;
     }
@@ -87,7 +87,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param taskIndex The task index in the service manager
      * @param decision The agent's boolean decision (true for YES, false for NO)
      */
-    function processTask(uint32 taskIndex, bool decision) external onlyOwner {
+    function processTask(uint32 taskIndex, bool decision) external {
         require(status == AgentStatus.Active, "Agent is not active");
 
         // Get the task from the manager by index (optional check, Oracle Manager also checks)
@@ -116,7 +116,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param amount The reward amount
      * @param taskIndex The task index this reward is for
      */
-    function recordReward(uint256 amount, uint32 taskIndex) external onlyOwner {
+    function recordReward(uint256 amount, uint32 taskIndex) external {
         totalRewardsEarned += amount;
         consensusParticipations++;
 
