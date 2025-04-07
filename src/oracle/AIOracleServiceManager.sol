@@ -66,7 +66,7 @@ contract AIOracleServiceManager is OwnableUpgradeable, IAIOracleServiceManager {
         uint256 _consensusThreshold,
         address _predictionMarketHook
     ) external initializer {
-        __Ownable_init(initialOwner);
+        __Ownable_init();
         minimumResponses = _minimumResponses;
         consensusThreshold = _consensusThreshold;
         require(_consensusThreshold <= 10000, "Threshold cannot exceed 100%");

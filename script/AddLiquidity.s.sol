@@ -234,12 +234,12 @@ contract AddLiquidity is Script {
 
         // Define tick range for liquidity provision.
         int24 tickSpacing = market.yesPoolKey.tickSpacing;
-        int24 minTick = -20000; // Approx 0.135 price
-        int24 maxTick = 0; // Price of 1.0
+        int24 minTick = 0; // Approx 0.135 price
+        int24 maxTick = 207000; // Price of 1.0
         minTick = (minTick / tickSpacing) * tickSpacing;
         maxTick = (maxTick / tickSpacing) * tickSpacing;
 
-        int24 initialTick = -6931; // Approx price = 0.5
+        int24 initialTick = 6931; // Approx price = 0.5
         initialTick = (initialTick / tickSpacing) * tickSpacing;
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
 
