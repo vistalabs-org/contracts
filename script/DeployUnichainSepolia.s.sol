@@ -35,7 +35,9 @@ contract DeployUniswapSepolia is Script {
     ERC20Mock public collateralToken;
 
     // Configuration
-    address constant UNISWAP_V4_MANAGER_SEPOLIA = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+    // testnet: address constant UNISWAP_V4_MANAGER_SEPOLIA = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+    // mainnet: address constant UNISWAP_V4_MANAGER_SEPOLIA = 0x1F98400000000000000000000000000000000004;
+    address constant UNISWAP_V4_MANAGER_SEPOLIA = 0x1F98400000000000000000000000000000000004;
     address constant POOL_SWAP_TEST_SEPOLIA = 0x9140a78c1A137c7fF1c151EC8231272aF78a99A4;
     address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
@@ -46,7 +48,9 @@ contract DeployUniswapSepolia is Script {
     address private oracleProxyAddress;
 
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
+        // testnet
+        // mainnet: UNICHAIN_PK
+        uint256 deployerPrivateKey = vm.envUint("UNICHAIN_PK");
         deployer = vm.addr(deployerPrivateKey);
 
         // Deploy Collateral Token
