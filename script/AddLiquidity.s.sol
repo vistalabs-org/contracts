@@ -245,15 +245,14 @@ contract AddLiquidity is Script {
         OutcomeToken noToken = OutcomeToken(address(market.noToken));
         uint256 collateralDecimals = collateralToken.decimals();
 
-        // Define tick range for liquidity provision. Use hook's TICK_SPACING
-        int24 tickSpacing = hook.TICK_SPACING(); // Get tick spacing from hook
-        int24 minTick = -9200; // ~0.01 USDC price for YES/NO token in collateral units
-        int24 maxTick = -100; // ~0.99 USDC price
+        // Define tick range for liquidity provision.
+        int24 tickSpacing = market.yesPoolKey.tickSpacing;
+        int24 minTick = 0; // Approx 0.135 price
+        int24 maxTick = 207000; // Price of 1.0
         minTick = (minTick / tickSpacing) * tickSpacing;
         maxTick = (maxTick / tickSpacing) * tickSpacing;
 
-        // Set initial price around 0.5
-        int24 initialTick = -6931; // Approx price = 0.5 (ln(0.5) / ln(1.0001) ~= -6931)
+        int24 initialTick = 6900; // Approx price = 0.5
         initialTick = (initialTick / tickSpacing) * tickSpacing;
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
 

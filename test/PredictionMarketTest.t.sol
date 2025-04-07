@@ -211,9 +211,9 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
-        int24 minTick = -9200; // ~0.01 USDC
-        int24 maxTick = -100; // ~0.99 USDC
-        int24 initialTick = -6900; // ~0.5 USDC
+        int24 minTick = 0; // ~0.01 USDC
+        int24 maxTick = 20700; // ~0.99 USDC
+        int24 initialTick = 6900; // ~0.5 USDC
 
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;
@@ -351,9 +351,9 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
-        int24 minTick = -9200; // ~0.01 USDC
-        int24 maxTick = -100; // ~0.99 USDC
-        int24 initialTick = -6900; // ~0.5 USDC
+        int24 minTick = 0; // ~0.01 USDC
+        int24 maxTick = 207000; // ~0.99 USDC
+        int24 initialTick = 6900; // ~0.5 USDC or 1 USDC = 2 YES
 
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;

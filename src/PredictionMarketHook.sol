@@ -120,15 +120,26 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         Market storage market = _getMarketFromPoolId(poolId);
         require(market.state == MarketState.Active, "Market not active for adding liquidity");
 
-        int24 minValidTick = -9200;
-        int24 maxValidTick = -100;
+        // Price of 1 YES = 1 USDC corresponds to tick 0 (maximum YES value)
+        int24 minValidTick = 0;
+        
+        // Price of 1 YES = 10^-9 USDC corresponds to tick 207233 (minimum YES value)
+        int24 maxValidTick = 207233;
+
+        // Adjust for tick spacing
         minValidTick = (minValidTick / TICK_SPACING) * TICK_SPACING;
         maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
 
+        // Check that the liquidity position is entirely within the valid range
         require(
-            params.tickLower >= minValidTick && params.tickUpper <= maxValidTick,
-            "Position must be within 0.01-0.99 price range"
+            params.tickLower >= minValidTick,
+            "Lower tick cannot be below minimum valid tick"
         );
+        require(
+            params.tickUpper <= maxValidTick,
+            "Upper tick cannot be above maximum valid tick"
+        );
+
         return BaseHook.beforeAddLiquidity.selector;
     }
 
