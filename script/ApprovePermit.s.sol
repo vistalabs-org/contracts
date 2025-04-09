@@ -5,17 +5,15 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-// Interface for the Permit2 contract (usually IAllowanceTransfer)
-// Adjust path based on your project's Permit2 location
-// Correct import path using remapping
-import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
+// Use our local interface instead of the external one
+import {IAllowanceTransfer} from "../src/interfaces/IAllowanceTransfer.sol";
 import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {Market, MarketState} from "../src/types/MarketTypes.sol";
 
 /**
  * @title ApprovePermit2
- * @notice This script approves the Permit2 contract on necessary tokens and grants
- *         Permit2 allowance to the PositionManager for those tokens on behalf of the deployer.
+ * @notice This script approves the Permit2 contract for the first market's tokens
+ *         and grants Permit2 allowance to the PositionManager for those tokens.
  * @dev Run this script *before* AddLiquidity.s.sol.
  *      Assumes addresses.json contains permit2, positionManager, collateralToken, and predictionMarketHook addresses.
  */
@@ -50,35 +48,36 @@ contract ApprovePermit2 is Script {
         _approveTokenForPermit2(address(collateralToken));
         _setPermit2Allowance(address(collateralToken));
 
-        // --- Approve Outcome Tokens for All Active Markets ---
-        console.log("\n--- Approving Outcome Tokens for Active Markets ---");
+        // --- Approve Outcome Tokens for First Active Market ---
+        console.log("\n--- Approving Outcome Tokens for First Market ---");
         bytes32[] memory marketIds = hook.getAllMarketIds();
-        console.log("Found", marketIds.length, "total markets.");
-
-        for (uint256 i = 0; i < marketIds.length; i++) {
-            bytes32 marketId = marketIds[i];
-            Market memory market = hook.getMarketById(marketId);
-
-            if (market.state == MarketState.Active) {
-                console.log("Processing approvals for active market:", vm.toString(marketId));
-                IERC20 yesToken = IERC20(address(market.yesToken));
-                IERC20 noToken = IERC20(address(market.noToken));
-
-                // Approve YES Token
-                _approveTokenForPermit2(address(yesToken));
-                _setPermit2Allowance(address(yesToken));
-
-                // Approve NO Token
-                _approveTokenForPermit2(address(noToken));
-                _setPermit2Allowance(address(noToken));
-            } else {
-                 console.log("Skipping approvals for inactive market:", vm.toString(marketId));
-            }
-        }
+        
+        require(marketIds.length > 0, "No markets found");
+        console.log("Found", marketIds.length, "total markets, using the first one.");
+        
+        bytes32 marketId = marketIds[0];
+        Market memory market = hook.getMarketById(marketId);
+        
+        console.log("Processing approvals for market:", vm.toString(marketId));
+        console.log("Market state:", uint8(market.state));
+        
+        IERC20 yesToken = IERC20(address(market.yesToken));
+        IERC20 noToken = IERC20(address(market.noToken));
+        
+        console.log("YES token:", address(market.yesToken));
+        console.log("NO token:", address(market.noToken));
+        
+        // Approve YES Token
+        _approveTokenForPermit2(address(yesToken));
+        _setPermit2Allowance(address(yesToken));
+        
+        // Approve NO Token
+        _approveTokenForPermit2(address(noToken));
+        _setPermit2Allowance(address(noToken));
 
         // Stop broadcasting transactions
         vm.stopBroadcast();
-        console.log("\nScript complete! Permit2 approvals set for PositionManager.");
+        console.log("\nScript complete! Permit2 approvals set for first market.");
     }
 
     /// @notice Loads required contract addresses from the `script/config/addresses.json` file.
