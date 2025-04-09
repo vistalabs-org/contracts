@@ -6,7 +6,7 @@ import "forge-std/console.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // Use our local interface instead of the external one
-import {IAllowanceTransfer} from "../src/interfaces/IAllowanceTransfer.sol";
+import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {Market, MarketState} from "../src/types/MarketTypes.sol";
 
