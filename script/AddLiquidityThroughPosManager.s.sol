@@ -15,6 +15,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol"; // Needed for Ma
 import {Actions} from "v4-periphery/src/libraries/Actions.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
 // Uniswap V4 Test utilities
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
@@ -41,6 +42,7 @@ contract AddLiquidity is Script {
     // --- Core Contracts (Loaded) ---
     PredictionMarketHook public hook;
     PoolManager public manager;
+    IAllowanceTransfer private permit2;
     // PoolCreationHelper public poolCreationHelper; // Not directly needed by this script
 
     PositionManager public positionManager;
@@ -53,6 +55,7 @@ contract AddLiquidity is Script {
         PoolManager manager = PoolManager(0x1F98400000000000000000000000000000000004);
         PredictionMarketHook hook = PredictionMarketHook(0xcB9903081b324B3a743E536D451705f9e1450880);
         PositionManager positionManager = PositionManager(payable(0x4529A01c7A0410167c5740C487A8DE60232617bf));
+        ERC20Mock collateralToken = ERC20Mock(0xA5a2250b0170bdb9bd0904C0440717f00A506023);
 
         PoolKey memory poolKey = PoolKey({
             currency0: Currency.wrap(0xA5a2250b0170bdb9bd0904C0440717f00A506023),
@@ -62,15 +65,28 @@ contract AddLiquidity is Script {
             tickSpacing: 100
         });
 
-        uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(poolKey.tickSpacing);
+        ERC20Mock yesToken = ERC20Mock(0xc3B3b75365Fe563454b007950b5B64f4f5096459);
+        /*
+        yesToken.approve(address(positionManager), type(uint256).max);
+        noToken.approve(address(positionManager), type(uint256).max);
+        yesToken.approve(address(manager), type(uint256).max);
+        noToken.approve(address(manager), type(uint256).max);
+        yesToken.approve(address(hook), type(uint256).max);
+        noToken.approve(address(hook), type(uint256).max);*/
+        permit2 = IAllowanceTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+        ERC20Mock(yesToken).approve(address(permit2), type(uint256).max);
+        permit2.approve(address(yesToken), address(positionManager), type(uint160).max, type(uint48).max);
+        ERC20Mock(collateralToken).approve(address(permit2), type(uint256).max);
+        permit2.approve(address(collateralToken), address(positionManager), type(uint160).max, type(uint48).max);
 
         bytes memory actions = abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR));
         bytes[] memory params = new bytes[](2);
 
-        params[0] = abi.encode(poolKey, 0, 207000, 0.000001 ether, 0, 0, deployer, bytes(""));
+        params[0] = abi.encode(poolKey, 0, 207000, 0.000001 ether, 1 ether, 1 ether, deployer, bytes(""));
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1);
 
-        uint256 deadline = block.timestamp + 60;
+        // Increase deadline further if needed (e.g., 30 minutes = 1800 seconds)
+        uint256 deadline = block.timestamp + 1800; // Or even longer if necessary
 
         uint256 valueToPass = 0;
 

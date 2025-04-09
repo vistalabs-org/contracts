@@ -33,7 +33,7 @@ contract ApprovePermit2 is Script {
 
     /// @notice Main script execution function.
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("UNISWAP_SEPOLIA_PK");
+        uint256 deployerPrivateKey = vm.envUint("UNISWAP_PK");
         deployer = vm.addr(deployerPrivateKey);
         console.log("Script runner (Deployer):", deployer);
 
