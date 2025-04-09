@@ -1,5 +1,19 @@
 # Vista Market - Prediction Markets on Uniswap v4
 
+## Deployed Contracts (Mainnet)
+
+| Contract                     | Address                                      |
+|------------------------------|----------------------------------------------|
+| Collateral Token             | `0xA5a2250b0170bdb9bd0904C0440717f00A506023` |
+| PoolManager                  | `0x1F98400000000000000000000000000000000004` |
+| PoolSwapTest                 | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
+| AIAgentRegistry              | `0xB5fF28b7E3eB8D70f456D5afcaeBc40210d25284` |
+| AIOracleServiceManager Impl  | `0x871F75C1cE8776768E92A81604eDec5716137c81` |
+| AIOracleServiceManager Proxy | `0xf2F14993D8744d3b7bf2ea0ECe03665e9a7f9298` |
+| AIAgent                      | `0xe87B112662F877B2C947B309233D025F7EAD3c4D` |
+| PoolCreationHelper           | `0x43B7819F4A66532Ad028B34D1Fe28eCC1dEAD820` |
+| PredictionMarketHook         | `0xcB9903081b324B3a743E536D451705f9e1450880` |
+
 ## Deployed Contracts (Sepolia)
 
 | Contract                     | Address                                      |
