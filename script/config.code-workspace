@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../frontend"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../indexer"
+		}
+	],
+	"settings": {
+		"workbench.colorCustomizations": {
+			"activityBar.background": "#332E0E",
+			"titleBar.activeBackground": "#474114",
+			"titleBar.activeForeground": "#FCFBF3"
+		}
+	}
+}
