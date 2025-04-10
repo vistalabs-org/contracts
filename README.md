@@ -28,6 +28,23 @@
 | PoolCreationHelper           | `0x80a72ADA9d27Ea178833D3dDCA34989B8A55435b` |
 | PredictionMarketHook         | `0x70FC0B47F1773F072dECd26497531D6511a98880` |
 
+## Contract Addresses (Arbitrum)
+
+| Contract | Address |
+|----------|---------|
+| Deployer | `0x6786B1148E0377BEFe86fF46cc073dE96B987FE4` |
+| Collateral Token | `0xA5a2250b0170bdb9bd0904C0440717f00A506023` |
+| Pool Manager | `0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32` |
+| Pool Swap Test | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
+| AI Agent Registry | `0xB5fF28b7E3eB8D70f456D5afcaeBc40210d25284` |
+| AI Oracle Service Manager Implementation | `0x871F75C1cE8776768E92A81604eDec5716137c81` |
+| AI Oracle Service Manager Proxy | `0xf2F14993D8744d3b7bf2ea0ECe03665e9a7f9298` |
+| AI Agent | `0xe87B112662F877B2C947B309233D025F7EAD3c4D` |
+| Pool Creation Helper | `0x43B7819F4A66532Ad028B34D1Fe28eCC1dEAD820` |
+| Prediction Market Hook | `0x910dE1AD16339a47CEa7b9a2651B09d6E58DC880` |
+
+These addresses are deployed on Arbitrum (Chain ID: 42161).
+
 ## Overview
 
 Vista Market is a prediction market platform built on Uniswap v4. It allows users to create and trade on markets for future events, with prices representing the probability of those events occurring.
