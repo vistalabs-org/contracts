@@ -138,3 +138,4 @@ contract ApprovePermit2 is Script {
          );
     }
 }
+

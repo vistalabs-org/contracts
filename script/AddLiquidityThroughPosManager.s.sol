@@ -38,7 +38,6 @@ import {OutcomeToken} from "../src/OutcomeToken.sol";
 contract AddLiquidity is Script {
     using stdJson for string;
 
-
     // --- Core Contracts (Loaded) ---
     PredictionMarketHook public hook;
     PoolManager public manager;
@@ -48,7 +47,7 @@ contract AddLiquidity is Script {
     PositionManager public positionManager;
 
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("UNICHAIN_PK");
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
         vm.startBroadcast(deployerPrivateKey);
@@ -90,10 +89,7 @@ contract AddLiquidity is Script {
 
         uint256 valueToPass = 0;
 
-        positionManager.modifyLiquidities{value: valueToPass}(
-            abi.encode(actions, params),
-            deadline
-        );        
+        positionManager.modifyLiquidities{value: valueToPass}(abi.encode(actions, params), deadline);
 
         vm.stopBroadcast();
     }

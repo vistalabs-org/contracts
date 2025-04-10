@@ -122,7 +122,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
 
         // Price of 1 YES = 1 USDC corresponds to tick 0 (maximum YES value)
         int24 minValidTick = 0;
-        
+
         // Price of 1 YES = 10^-9 USDC corresponds to tick 207233 (minimum YES value)
         int24 maxValidTick = 207233;
 
@@ -131,14 +131,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
 
         // Check that the liquidity position is entirely within the valid range
-        require(
-            params.tickLower >= minValidTick,
-            "Lower tick cannot be below minimum valid tick"
-        );
-        require(
-            params.tickUpper <= maxValidTick,
-            "Upper tick cannot be above maximum valid tick"
-        );
+        require(params.tickLower >= minValidTick, "Lower tick cannot be below minimum valid tick");
+        require(params.tickUpper <= maxValidTick, "Upper tick cannot be above maximum valid tick");
 
         return BaseHook.beforeAddLiquidity.selector;
     }
