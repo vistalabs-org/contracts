@@ -40,6 +40,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
 
     /**
      * @dev Initializes the contract.
+     * @param initialOwner The initial owner of the contract.
      * @param _serviceManager Address of the oracle service manager.
      * @param _modelType The type of AI model used by this agent.
      * @param _modelVersion The version of the AI model.
@@ -47,6 +48,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param _symbol The symbol for the ERC721 token.
      */
     function initialize(
+        address initialOwner,
         address _serviceManager,
         string memory _modelType,
         string memory _modelVersion,
@@ -54,6 +56,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
         string memory _symbol
     ) external initializer {
         __ERC721_init(_name, _symbol);
+        __Ownable_init(initialOwner);
 
         require(_serviceManager != address(0), "Invalid service manager address");
         serviceManager = IAIOracleServiceManager(_serviceManager);
@@ -66,7 +69,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @dev Set the agent's status
      * @param _status New status for the agent
      */
-    function setStatus(AgentStatus _status) external {
+    function setStatus(AgentStatus _status) external virtual onlyOwner {
         AgentStatus oldStatus = status;
         status = _status;
         emit StatusChanged(oldStatus, _status);
@@ -77,7 +80,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param _modelType New model type
      * @param _modelVersion New model version
      */
-    function updateModelInfo(string memory _modelType, string memory _modelVersion) external {
+    function updateModelInfo(string memory _modelType, string memory _modelVersion) external onlyOwner {
         modelType = _modelType;
         modelVersion = _modelVersion;
     }
@@ -116,7 +119,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @param amount The reward amount
      * @param taskIndex The task index this reward is for
      */
-    function recordReward(uint256 amount, uint32 taskIndex) external {
+    function recordReward(uint256 amount, uint32 taskIndex) external onlyOwner {
         totalRewardsEarned += amount;
         consensusParticipations++;
 
@@ -133,6 +136,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
     function getAgentStats()
         external
         view
+        virtual
         returns (
             uint256 _tasksCompleted,
             uint256 _consensusParticipations,
