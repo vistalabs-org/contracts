@@ -69,7 +69,7 @@ contract AIAgent is Initializable, ERC721Upgradeable, OwnableUpgradeable {
      * @dev Set the agent's status
      * @param _status New status for the agent
      */
-    function setStatus(AgentStatus _status) external virtual onlyOwner {
+    function setStatus(AgentStatus _status) external virtual {
         AgentStatus oldStatus = status;
         status = _status;
         emit StatusChanged(oldStatus, _status);

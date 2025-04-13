@@ -12,14 +12,15 @@ enum MarketState {
     Resolved, // Final outcome determined, winnings can be claimed
     Cancelled, // Market cancelled, collateral can be redeemed
     Disputed // Market resolution is disputed
+
 }
 
 struct MarketSetting {
-    uint24 fee;           // Uniswap pool fee tier (e.g., 500 for 0.05%)
-    int24 tickSpacing;    // Tick spacing corresponding to the fee tier
-    int24 startingTick;   // The initial tick for the pool (optional, might not be used directly at pool creation)
-    int24 maxTick;        // Maximum allowable tick for liquidity in this market
-    int24 minTick;        // Minimum allowable tick for liquidity in this market
+    uint24 fee; // Uniswap pool fee tier (e.g., 500 for 0.05%)
+    int24 tickSpacing; // Tick spacing corresponding to the fee tier
+    int24 startingTick; // The initial tick for the pool (optional, might not be used directly at pool creation)
+    int24 maxTick; // Maximum allowable tick for liquidity in this market
+    int24 minTick; // Minimum allowable tick for liquidity in this market
 }
 
 struct Market {

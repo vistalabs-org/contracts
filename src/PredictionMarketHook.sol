@@ -168,10 +168,10 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
 
         // Check that the liquidity position is entirely within the valid range defined by market settings
         if (params.tickLower < minValidTick) {
-             revert TickBelowMinimumValidTick(); // Potentially rename error or add context
+            revert TickBelowMinimumValidTick(); // Potentially rename error or add context
         }
         if (params.tickUpper > maxValidTick) {
-             revert TickAboveMaximumValidTick(); // Potentially rename error or add context
+            revert TickAboveMaximumValidTick(); // Potentially rename error or add context
         }
 
         return BaseHook.beforeAddLiquidity.selector;
@@ -183,17 +183,15 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
     /// @dev transfers collateral from the creator, stores market details, and mints initial outcome tokens to the creator.
     /// @param params Struct containing all necessary parameters for market creation.
     /// @return marketId The unique identifier (keccak256 hash) for the newly created market.
-    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public override nonReentrant returns (bytes32) {
+    function createMarketAndDepositCollateral(CreateMarketParams calldata params)
+        public
+        override
+        nonReentrant
+        returns (bytes32)
+    {
         // Generate a truly unique market ID
-        bytes32 marketId = keccak256(
-            abi.encodePacked(
-                params.creator,
-                params.title,
-                params.description,
-                _marketNonce++,
-                msg.sender
-            )
-        );
+        bytes32 marketId =
+            keccak256(abi.encodePacked(params.creator, params.title, params.description, _marketNonce++, msg.sender));
 
         address collateral = params.collateralAddress;
         OutcomeToken yesToken;
@@ -455,7 +453,10 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
         }
 
         // Check if market can be cancelled (Created, Active, or Closed)
-        if (market.state != MarketState.Created && market.state != MarketState.Active && market.state != MarketState.Closed) {
+        if (
+            market.state != MarketState.Created && market.state != MarketState.Active
+                && market.state != MarketState.Closed
+        ) {
             revert MarketCannotBeCancelledInCurrentState();
         }
         market.state = MarketState.Cancelled;
@@ -520,7 +521,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
         // 6. Check if sufficient collateral remains in the contract's pool
         uint256 currentlyClaimed = _claimedTokens[marketId];
         if (claimAmount > market.totalCollateral - currentlyClaimed) {
-             revert InsufficientCollateralRemaining();
+            revert InsufficientCollateralRemaining();
         }
 
         // --- Effects ---
@@ -586,7 +587,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
         // Transfer the calculated collateral amount to the user
         // Only transfer if there's an amount to transfer (should always be > 0 if totalTokens > 0)
         if (redeemAmount > 0) {
-             IERC20(market.collateralAddress).safeTransfer(sender, redeemAmount);
+            IERC20(market.collateralAddress).safeTransfer(sender, redeemAmount);
         }
 
         // Emit an event if desired, e.g., CollateralRedeemed(marketId, sender, redeemAmount);

@@ -216,4 +216,7 @@ contract TestMarketResolution is Script {
             // End of loop for this market
         }
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

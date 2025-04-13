@@ -34,7 +34,7 @@ contract DeployTestMarkets is Script {
 
     // --- Configuration ---
     uint256 public constant INITIAL_MARKET_COLLATERAL = 100 * 1e6; // 100 USDC (assuming 6 decimals) collateral for market creation.
-    
+
     // Market settings constants
     uint24 public constant MARKET_FEE = 3000; // 0.3% fee tier
     int24 public constant MARKET_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
@@ -125,7 +125,7 @@ contract DeployTestMarkets is Script {
             minTick: MARKET_MIN_TICK,
             maxTick: MARKET_MAX_TICK
         });
-        
+
         // --- Market 1 ---
         CreateMarketParams memory params1 = CreateMarketParams({
             oracle: deployer,
@@ -168,4 +168,7 @@ contract DeployTestMarkets is Script {
         require(state2 == MarketState.Active, "Market 2 not immediately active after creation!");
         // *** End check ***
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

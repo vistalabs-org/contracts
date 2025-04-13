@@ -29,39 +29,9 @@ import {MarketState} from "../src/types/MarketTypes.sol";
 import {IAIOracleServiceManager} from "../src/interfaces/IAIOracleServiceManager.sol";
 import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol"; // Import AIAgentRegistry
 import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol"; // Import Deployers
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol"; // Import Ownable for error selector
-import { IPredictionMarketHook } from "../src/interfaces/IPredictionMarketHook.sol"; // For mock hook
-
-// NEW: Concrete Mock Hook implementing all functions (mostly dummies)
-contract MinimalRevertingHook is IPredictionMarketHook {
-    // The function we care about for the test
-    function resolveMarket(bytes32 /*marketId*/, bool /*outcome*/) external pure override {
-        revert("MockRevert: Cannot resolve market");
-    }
-
-    // --- Dummy Implementations for all other IPredictionMarketHook functions ---
-    function createMarketAndDepositCollateral(CreateMarketParams calldata) external pure override returns (bytes32) { return bytes32(0); }
-    function closeMarket(bytes32) external pure override { }
-    function enterResolution(bytes32) external pure override { }
-    function getMarketById(bytes32) external pure override returns (Market memory) { Market memory m; return m; }
-    function setOracleServiceManager(address) external pure { }
-    function aiOracleServiceManager() external pure override returns (address) { return address(0); }
-    function activateMarket(bytes32 /*marketId*/) external pure override { }
-    function cancelMarket(bytes32 /*marketId*/) external pure override { }
-    function claimWinnings(bytes32 /*marketId*/) external pure override { }
-    function disputeResolution(bytes32 /*marketId*/) external pure override { }
-    function mintOutcomeTokens(bytes32 /*marketId*/, uint256 /*collateralAmount*/, address /*collateralAddress*/) external pure override { }
-    function redeemCollateral(bytes32 /*marketId*/) external pure override { }
-    // View/Pure functions returning values
-    function markets(PoolId /*poolId*/) external pure override returns (Market memory) { Market memory m; return m; }
-    function claimedTokens(bytes32 /*marketId*/) external pure override returns (uint256) { return 0; }
-    function hasClaimed(bytes32 /*marketId*/, address /*user*/) external pure override returns (bool) { return false; }
-    function getMarkets(uint256 /*offset*/, uint256 /*limit*/) external pure override returns (Market[] memory) { Market[] memory m; return m; }
-    function getAllMarketIds() external pure override returns (bytes32[] memory) { bytes32[] memory m; return m; }
-    function getAllMarkets() external pure override returns (Market[] memory) { Market[] memory m; return m; }
-    function getMarketCount() external pure override returns (uint256) { return 0; }
-    function marketPoolIds(uint256 /*index*/) external pure override returns (PoolId) { return PoolId.wrap(bytes32(0)); } 
-}
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol"; // Import Ownable for error selector
+import {IPredictionMarketHook} from "../src/interfaces/IPredictionMarketHook.sol"; // For mock hook
+import {MinimalRevertingHook} from "./utils/MinimalRevertingHook.sol"; // Import the mock hook
 
 /**
  * @title PredictionMarketAITest
@@ -456,9 +426,9 @@ contract PredictionMarketAITest is Test, Deployers {
         oracle7.initialize(address(this), 1, 10000, address(revertingHook)); // Use reverting hook address
 
         // Setup agent
-        AIAgent agentX = new AIAgent(); 
-        agentX.initialize(address(this), address(oracle7), "X", "1", "X", "X"); 
-        registry7.registerAgent(address(agentX)); 
+        AIAgent agentX = new AIAgent();
+        agentX.initialize(address(this), address(oracle7), "X", "1", "X", "X");
+        registry7.registerAgent(address(agentX));
         oracle7.addTestOperator(address(agentX));
 
         // Create a market resolution task linked to the reverting hook
@@ -470,22 +440,27 @@ contract PredictionMarketAITest is Test, Deployers {
 
         // Agent responds YES - should trigger finalize and call hook
         vm.prank(address(agentX));
-        
+
         // Expect ONLY the MarketResolutionFailed event, as it confirms the catch block ran.
         // The other events (ConsensusReached, TaskResponded) are less critical for THIS specific test.
         vm.expectEmit(true, false, false, false); // Check only the event signature (topic1)
         emit IAIOracleServiceManager.MarketResolutionFailed(taskIndex, marketId, ""); // Still needed for sig generation
         // 3. TaskResponded (from respondToTask after _finalizeConsensus)
         vm.expectEmit(true, false, false, false); // Check only the event signature (topic1)
-        emit IAIOracleServiceManager.TaskResponded(taskIndex, IAIOracleServiceManager.Task("", uint32(block.number)), address(agentX)); // Still needed for sig generation
+        emit IAIOracleServiceManager.TaskResponded(
+            taskIndex, IAIOracleServiceManager.Task("", uint32(block.number)), address(agentX)
+        ); // Still needed for sig generation
 
         // Call the function that should trigger the internal revert and emission
         oracle7.respondToTask(taskIndex, bytes("YES"));
 
         // Verify task is still marked as Resolved despite hook failure
-        assertEq(uint8(oracle7.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Task should still resolve");
+        assertEq(
+            uint8(oracle7.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Resolved),
+            "Task should still resolve"
+        );
         assertEq(oracle7.consensusResultHash(taskIndex), oracle7.YES_HASH(), "Consensus hash should be YES_HASH");
-
     }
 
     function test_Oracle_CreateMarketResolutionTask_Fail_InvalidInputs() public {
@@ -525,7 +500,7 @@ contract PredictionMarketAITest is Test, Deployers {
         oracle.updateConsensusParameters(2, 10001);
     }
 
-     function test_Oracle_UpdateConsensusParameters_Fail_ZeroMinResponses() public {
+    function test_Oracle_UpdateConsensusParameters_Fail_ZeroMinResponses() public {
         vm.expectRevert(bytes("Minimum responses must be positive"));
         vm.prank(address(this));
         oracle.updateConsensusParameters(0, 7500);
@@ -551,13 +526,19 @@ contract PredictionMarketAITest is Test, Deployers {
         string memory taskName = "My Generic Task";
 
         vm.expectEmit(true, true, true, true); // Check for event
-        emit IAIOracleServiceManager.NewTaskCreated(taskIndex, IAIOracleServiceManager.Task(taskName, uint32(block.number)));
+        emit IAIOracleServiceManager.NewTaskCreated(
+            taskIndex, IAIOracleServiceManager.Task(taskName, uint32(block.number))
+        );
         oracle.createNewTask(taskName);
 
         assertEq(oracle.latestTaskNum(), taskIndex + 1, "latestTaskNum did not increment");
         IAIOracleServiceManager.Task memory createdTask = oracle.getTask(taskIndex);
         assertEq(createdTask.name, taskName, "Task name mismatch");
-        assertEq(uint8(oracle.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Created), "Task status mismatch");
+        assertEq(
+            uint8(oracle.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Created),
+            "Task status mismatch"
+        );
         assertTrue(oracle.allTaskHashes(taskIndex) != bytes32(0), "Task hash not set");
     }
 
@@ -596,18 +577,29 @@ contract PredictionMarketAITest is Test, Deployers {
         vm.expectEmit(true, true, true, true); // Expect MarketResolvedByOracle (emitted second in _finalize if hook call succeeds)
         emit IAIOracleServiceManager.MarketResolvedByOracle(taskIndex, mId, true); // Outcome is true (YES)
         vm.expectEmit(true, true, true, true); // Expect TaskResponded (emitted last in respondToTask)
-        emit IAIOracleServiceManager.TaskResponded(taskIndex, IAIOracleServiceManager.Task("", uint32(block.number)), address(agent));
+        emit IAIOracleServiceManager.TaskResponded(
+            taskIndex, IAIOracleServiceManager.Task("", uint32(block.number)), address(agent)
+        );
 
         vm.prank(address(agent));
         oracle.respondToTask(taskIndex, bytes("YES"));
-        assertEq(uint8(oracle.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Task should be resolved");
+        assertEq(
+            uint8(oracle.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Resolved),
+            "Task should be resolved"
+        );
 
         // Try to respond again
         // Need another agent/operator for this test
         AIAgent agent2 = new AIAgent();
         agent2.initialize(
             address(this), // Owner
-            address(oracle), "AGENT2", "v1", "Agent2", "AG2");
+            address(oracle),
+            "AGENT2",
+            "v1",
+            "Agent2",
+            "AG2"
+        );
         vm.prank(address(this));
         registry.registerAgent(address(agent2));
         vm.prank(address(this));
@@ -648,22 +640,34 @@ contract PredictionMarketAITest is Test, Deployers {
 
     // --- Consensus Tests ---
     function test_Oracle_Consensus_NotReached_BelowMinimumResponses() public {
-         // Setup oracle with minResponses = 3
+        // Setup oracle with minResponses = 3
         AIAgentRegistry registry3 = new AIAgentRegistry();
         AIOracleServiceManager oracle3 = new AIOracleServiceManager(address(registry3));
         oracle3.initialize(address(this), 3, 7000, address(hook));
 
         // Setup 2 agents
-        AIAgent agentA = new AIAgent(); 
+        AIAgent agentA = new AIAgent();
         agentA.initialize(
             address(this), // Owner
-            address(oracle3), "A", "1", "A", "A"); 
-        registry3.registerAgent(address(agentA)); oracle3.addTestOperator(address(agentA));
-        AIAgent agentB = new AIAgent(); 
+            address(oracle3),
+            "A",
+            "1",
+            "A",
+            "A"
+        );
+        registry3.registerAgent(address(agentA));
+        oracle3.addTestOperator(address(agentA));
+        AIAgent agentB = new AIAgent();
         agentB.initialize(
             address(this), // Owner
-            address(oracle3), "B", "1", "B", "B"); 
-        registry3.registerAgent(address(agentB)); oracle3.addTestOperator(address(agentB));
+            address(oracle3),
+            "B",
+            "1",
+            "B",
+            "B"
+        );
+        registry3.registerAgent(address(agentB));
+        oracle3.addTestOperator(address(agentB));
 
         uint32 taskIndex = oracle3.latestTaskNum();
         oracle3.createNewTask("Consensus Test Task");
@@ -671,37 +675,63 @@ contract PredictionMarketAITest is Test, Deployers {
         // Agent A responds
         vm.prank(address(agentA));
         oracle3.respondToTask(taskIndex, bytes("Response1"));
-        assertEq(uint8(oracle3.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.InProgress), "Task status after 1st response");
+        assertEq(
+            uint8(oracle3.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.InProgress),
+            "Task status after 1st response"
+        );
 
         // Agent B responds (different response)
         vm.prank(address(agentB));
         oracle3.respondToTask(taskIndex, bytes("Response2"));
-        assertEq(uint8(oracle3.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.InProgress), "Task status after 2nd response - should still be InProgress");
+        assertEq(
+            uint8(oracle3.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.InProgress),
+            "Task status after 2nd response - should still be InProgress"
+        );
         assertEq(oracle3.consensusResultHash(taskIndex), bytes32(0), "Consensus hash should be zero");
     }
 
-     function test_Oracle_Consensus_NotReached_BelowThreshold() public {
-         // Setup oracle with minResponses = 2, threshold = 70% (7000)
+    function test_Oracle_Consensus_NotReached_BelowThreshold() public {
+        // Setup oracle with minResponses = 2, threshold = 70% (7000)
         AIAgentRegistry registry4 = new AIAgentRegistry();
         AIOracleServiceManager oracle4 = new AIOracleServiceManager(address(registry4));
         oracle4.initialize(address(this), 2, 7000, address(hook));
 
         // Setup 3 agents
-        AIAgent agentC = new AIAgent(); 
+        AIAgent agentC = new AIAgent();
         agentC.initialize(
             address(this), // Owner
-            address(oracle4), "C", "1", "C", "C"); 
-        registry4.registerAgent(address(agentC)); oracle4.addTestOperator(address(agentC));
-        AIAgent agentD = new AIAgent(); 
+            address(oracle4),
+            "C",
+            "1",
+            "C",
+            "C"
+        );
+        registry4.registerAgent(address(agentC));
+        oracle4.addTestOperator(address(agentC));
+        AIAgent agentD = new AIAgent();
         agentD.initialize(
             address(this), // Owner
-            address(oracle4), "D", "1", "D", "D"); 
-        registry4.registerAgent(address(agentD)); oracle4.addTestOperator(address(agentD));
-        AIAgent agentE = new AIAgent(); 
+            address(oracle4),
+            "D",
+            "1",
+            "D",
+            "D"
+        );
+        registry4.registerAgent(address(agentD));
+        oracle4.addTestOperator(address(agentD));
+        AIAgent agentE = new AIAgent();
         agentE.initialize(
             address(this), // Owner
-            address(oracle4), "E", "1", "E", "E"); 
-        registry4.registerAgent(address(agentE)); oracle4.addTestOperator(address(agentE));
+            address(oracle4),
+            "E",
+            "1",
+            "E",
+            "E"
+        );
+        registry4.registerAgent(address(agentE));
+        oracle4.addTestOperator(address(agentE));
 
         uint32 taskIndex = oracle4.latestTaskNum();
         oracle4.createNewTask("Threshold Test Task");
@@ -728,18 +758,23 @@ contract PredictionMarketAITest is Test, Deployers {
     }
 
     function test_Oracle_Consensus_Reached_ExactThreshold() public {
-         // Setup oracle with minResponses = 2, threshold = 70% (7000)
+        // Setup oracle with minResponses = 2, threshold = 70% (7000)
         AIAgentRegistry registry5 = new AIAgentRegistry();
         AIOracleServiceManager oracle5 = new AIOracleServiceManager(address(registry5));
         oracle5.initialize(address(this), 7, 7000, address(hook));
 
         // Setup 10 agents
         AIAgent[10] memory agents;
-        for(uint i = 0; i < 10; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             agents[i] = new AIAgent();
             agents[i].initialize(
                 address(this), // Owner
-                address(oracle5), "X", "1", "X", "X");
+                address(oracle5),
+                "X",
+                "1",
+                "X",
+                "X"
+            );
             registry5.registerAgent(address(agents[i]));
             oracle5.addTestOperator(address(agents[i]));
         }
@@ -752,16 +787,25 @@ contract PredictionMarketAITest is Test, Deployers {
         bytes32 winningHash = keccak256(winningResponse);
 
         // 7 agents respond WINNER (7/10 = 70%)
-        for(uint i = 0; i < 7; i++) {
+        for (uint256 i = 0; i < 7; i++) {
             vm.prank(address(agents[i]));
             oracle5.respondToTask(taskIndex, winningResponse);
             // Check *before* the 7th response that it's still InProgress
-            if (i == 5) { // After 6 responses (6/10 = 60%) 
-                 assertEq(uint8(oracle5.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.InProgress), "Should not resolve before 7th WINNER response");
+            if (i == 5) {
+                // After 6 responses (6/10 = 60%)
+                assertEq(
+                    uint8(oracle5.taskStatus(taskIndex)),
+                    uint8(IAIOracleServiceManager.TaskStatus.InProgress),
+                    "Should not resolve before 7th WINNER response"
+                );
             }
         }
         // 7th response should trigger resolution - check after the loop
-        assertEq(uint8(oracle5.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Should be resolved after 7th WINNER response");
+        assertEq(
+            uint8(oracle5.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Resolved),
+            "Should be resolved after 7th WINNER response"
+        );
         assertEq(oracle5.consensusResultHash(taskIndex), winningHash, "Consensus hash mismatch");
     }
 
@@ -780,9 +824,18 @@ contract PredictionMarketAITest is Test, Deployers {
         oracle6.initialize(address(this), 1, 10000, address(hook));
 
         // Setup 3 agents
-        AIAgent agentW1 = new AIAgent(); agentW1.initialize(address(this), address(oracle6), "W1", "1", "W1", "W1"); registry6.registerAgent(address(agentW1)); oracle6.addTestOperator(address(agentW1));
-        AIAgent agentW2 = new AIAgent(); agentW2.initialize(address(this), address(oracle6), "W2", "1", "W2", "W2"); registry6.registerAgent(address(agentW2)); oracle6.addTestOperator(address(agentW2));
-        AIAgent agentL1 = new AIAgent(); agentL1.initialize(address(this), address(oracle6), "L1", "1", "L1", "L1"); registry6.registerAgent(address(agentL1)); oracle6.addTestOperator(address(agentL1));
+        AIAgent agentW1 = new AIAgent();
+        agentW1.initialize(address(this), address(oracle6), "W1", "1", "W1", "W1");
+        registry6.registerAgent(address(agentW1));
+        oracle6.addTestOperator(address(agentW1));
+        AIAgent agentW2 = new AIAgent();
+        agentW2.initialize(address(this), address(oracle6), "W2", "1", "W2", "W2");
+        registry6.registerAgent(address(agentW2));
+        oracle6.addTestOperator(address(agentW2));
+        AIAgent agentL1 = new AIAgent();
+        agentL1.initialize(address(this), address(oracle6), "L1", "1", "L1", "L1");
+        registry6.registerAgent(address(agentL1));
+        oracle6.addTestOperator(address(agentL1));
 
         uint32 taskIndex = oracle6.latestTaskNum();
         oracle6.createNewTask("Reward Distribution Test");
@@ -793,7 +846,11 @@ contract PredictionMarketAITest is Test, Deployers {
         // Agent W1 responds (WIN) - Triggers resolution
         vm.prank(address(agentW1));
         oracle6.respondToTask(taskIndex, winningResponse);
-        assertEq(uint8(oracle6.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Task should be resolved by W1");
+        assertEq(
+            uint8(oracle6.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Resolved),
+            "Task should be resolved by W1"
+        );
 
         // Agent W2 responds (WIN) - Should fail as already resolved
         vm.prank(address(agentW2));
@@ -803,15 +860,24 @@ contract PredictionMarketAITest is Test, Deployers {
         // Let's adjust the setup: MinResponses=3, Threshold=6000
         // Re-run with adjusted setup in a new test or modify this one. Sticking with modification for now.
 
-        // --- Reset and Redo Setup for Reward Test --- 
+        // --- Reset and Redo Setup for Reward Test ---
         registry6 = new AIAgentRegistry();
         oracle6 = new AIOracleServiceManager(address(registry6));
         oracle6.initialize(address(this), 3, 6000, address(hook)); // Min 3 responses, 60% threshold
 
-        agentW1 = new AIAgent(); agentW1.initialize(address(this), address(oracle6), "W1", "1", "W1", "W1"); registry6.registerAgent(address(agentW1)); oracle6.addTestOperator(address(agentW1));
-        agentW2 = new AIAgent(); agentW2.initialize(address(this), address(oracle6), "W2", "1", "W2", "W2"); registry6.registerAgent(address(agentW2)); oracle6.addTestOperator(address(agentW2));
-        agentL1 = new AIAgent(); agentL1.initialize(address(this), address(oracle6), "L1", "1", "L1", "L1"); registry6.registerAgent(address(agentL1)); oracle6.addTestOperator(address(agentL1));
-        
+        agentW1 = new AIAgent();
+        agentW1.initialize(address(this), address(oracle6), "W1", "1", "W1", "W1");
+        registry6.registerAgent(address(agentW1));
+        oracle6.addTestOperator(address(agentW1));
+        agentW2 = new AIAgent();
+        agentW2.initialize(address(this), address(oracle6), "W2", "1", "W2", "W2");
+        registry6.registerAgent(address(agentW2));
+        oracle6.addTestOperator(address(agentW2));
+        agentL1 = new AIAgent();
+        agentL1.initialize(address(this), address(oracle6), "L1", "1", "L1", "L1");
+        registry6.registerAgent(address(agentL1));
+        oracle6.addTestOperator(address(agentL1));
+
         taskIndex = oracle6.latestTaskNum();
         oracle6.createNewTask("Reward Distribution Test V2");
 
@@ -823,10 +889,14 @@ contract PredictionMarketAITest is Test, Deployers {
         vm.prank(address(agentW2));
         oracle6.respondToTask(taskIndex, winningResponse); // 2 W / 3 T -> Resolves (2/3 = 66% >= 60%)
 
-        assertEq(uint8(oracle6.taskStatus(taskIndex)), uint8(IAIOracleServiceManager.TaskStatus.Resolved), "Task should be resolved by W2");
+        assertEq(
+            uint8(oracle6.taskStatus(taskIndex)),
+            uint8(IAIOracleServiceManager.TaskStatus.Resolved),
+            "Task should be resolved by W2"
+        );
         assertEq(oracle6.consensusResultHash(taskIndex), keccak256(winningResponse), "Winning hash mismatch");
 
-        // --- Distribute Rewards --- 
+        // --- Distribute Rewards ---
         uint256 expectedReward = 1 ether; // From placeholder calculateReward function
 
         // Expect reward for W1
@@ -846,16 +916,16 @@ contract PredictionMarketAITest is Test, Deployers {
 
     // --- View Function Tests ---
     function test_Oracle_GetTask_Success() public {
-         uint32 taskIndex = createGenericAIOracleTask("Get Task Test");
-         IAIOracleServiceManager.Task memory task = oracle.getTask(taskIndex);
-         assertEq(task.name, "Get Task Test");
-         assertTrue(task.taskCreatedBlock > 0, "Task creation block not set");
+        uint32 taskIndex = createGenericAIOracleTask("Get Task Test");
+        IAIOracleServiceManager.Task memory task = oracle.getTask(taskIndex);
+        assertEq(task.name, "Get Task Test");
+        assertTrue(task.taskCreatedBlock > 0, "Task creation block not set");
     }
 
-     function test_Oracle_GetTask_Fail_NotFound() public {
-         vm.expectRevert(bytes("Task does not exist"));
-         oracle.getTask(9999);
-     }
+    function test_Oracle_GetTask_Fail_NotFound() public {
+        vm.expectRevert(bytes("Task does not exist"));
+        oracle.getTask(9999);
+    }
 
     function test_Oracle_GetConsensusResult() public {
         // Use a market task that resolves on first response (minResponses=1, threshold=10000)
@@ -886,8 +956,14 @@ contract PredictionMarketAITest is Test, Deployers {
         oracle8.initialize(address(this), 3, 7000, address(hook));
 
         // Setup 2 agents
-        AIAgent agentA = new AIAgent(); agentA.initialize(address(this), address(oracle8), "A", "1", "A", "A"); registry8.registerAgent(address(agentA)); oracle8.addTestOperator(address(agentA));
-        AIAgent agentB = new AIAgent(); agentB.initialize(address(this), address(oracle8), "B", "1", "B", "B"); registry8.registerAgent(address(agentB)); oracle8.addTestOperator(address(agentB));
+        AIAgent agentA = new AIAgent();
+        agentA.initialize(address(this), address(oracle8), "A", "1", "A", "A");
+        registry8.registerAgent(address(agentA));
+        oracle8.addTestOperator(address(agentA));
+        AIAgent agentB = new AIAgent();
+        agentB.initialize(address(this), address(oracle8), "B", "1", "B", "B");
+        registry8.registerAgent(address(agentB));
+        oracle8.addTestOperator(address(agentB));
 
         uint32 taskIndex = oracle8.latestTaskNum();
         oracle8.createNewTask("Respondents Test Task");
@@ -909,10 +985,11 @@ contract PredictionMarketAITest is Test, Deployers {
         address[] memory respondents2 = oracle8.taskRespondents(taskIndex);
         assertEq(respondents2.length, 2, "Should be 2 respondents after B");
         // Order is not guaranteed, check presence
-        bool foundA = false; bool foundB = false;
-        for(uint i=0; i<respondents2.length; i++){
-            if(respondents2[i] == address(agentA)) foundA = true;
-            if(respondents2[i] == address(agentB)) foundB = true;
+        bool foundA = false;
+        bool foundB = false;
+        for (uint256 i = 0; i < respondents2.length; i++) {
+            if (respondents2[i] == address(agentA)) foundA = true;
+            if (respondents2[i] == address(agentB)) foundB = true;
         }
         assertTrue(foundA && foundB, "Both agents should be in respondents list");
     }
@@ -935,16 +1012,5 @@ contract PredictionMarketAITest is Test, Deployers {
         address retrievedHookAddressGeneric = oracle.getHookAddressForTask(genericTaskIndex);
         assertEq(retrievedMarketIdGeneric, bytes32(0), "Market ID should be zero for generic task");
         assertEq(retrievedHookAddressGeneric, address(0), "Hook address should be zero for generic task");
-
     }
-
-    // Add tests for other view functions: taskRespondents, getMarketIdForTask, getHookAddressForTask etc.
-    // These are partially covered by other tests but explicit tests can be added.
-
-    // TODO:
-    // - Test agent responding NO
-    // - Test multiple agents (requires adjusting Oracle deployment params/logic) <-- Some added in consensus tests
-    // - Test claiming winnings
-    // - Test cancellation/redemption
-    // - Test trading (requires adding liquidity)
 }

@@ -200,4 +200,7 @@ contract TestMarketSwap is Script {
             console.log("Swap failed with low-level data.");
         }
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

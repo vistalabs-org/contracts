@@ -34,7 +34,10 @@ contract PoolCreationHelper {
     }*/
     // for collateral token as token0 or token1
 
-    function createUniswapPoolWithCollateral(PoolKey memory pool, int24 initialTick) external returns (PoolKey memory) {
+    function createUniswapPoolWithCollateral(PoolKey memory pool, int24 initialTick)
+        external
+        returns (PoolKey memory)
+    {
         uint160 pricePoolQ = TickMath.getSqrtPriceAtTick(initialTick);
 
         console.log("Pool price SQRTX96: %d", pricePoolQ);

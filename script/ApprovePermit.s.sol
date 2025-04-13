@@ -51,26 +51,26 @@ contract ApprovePermit2 is Script {
         // --- Approve Outcome Tokens for First Active Market ---
         console.log("\n--- Approving Outcome Tokens for First Market ---");
         bytes32[] memory marketIds = hook.getAllMarketIds();
-        
+
         require(marketIds.length > 0, "No markets found");
         console.log("Found", marketIds.length, "total markets, using the first one.");
-        
+
         bytes32 marketId = marketIds[0];
         Market memory market = hook.getMarketById(marketId);
-        
+
         console.log("Processing approvals for market:", vm.toString(marketId));
         console.log("Market state:", uint8(market.state));
-        
+
         IERC20 yesToken = IERC20(address(market.yesToken));
         IERC20 noToken = IERC20(address(market.noToken));
-        
+
         console.log("YES token:", address(market.yesToken));
         console.log("NO token:", address(market.noToken));
-        
+
         // Approve YES Token
         _approveTokenForPermit2(address(yesToken));
         _setPermit2Allowance(address(yesToken));
-        
+
         // Approve NO Token
         _approveTokenForPermit2(address(noToken));
         _setPermit2Allowance(address(noToken));
@@ -109,33 +109,34 @@ contract ApprovePermit2 is Script {
     /// @notice Approves the main Permit2 contract to spend the deployer's tokens.
     function _approveTokenForPermit2(address tokenAddress) internal {
         // Format string explicitly before logging
-        console.log(string.concat(
-            "  Approving Permit2 contract (",
-            vm.toString(address(permit2)),
-            ") on token (",
-            vm.toString(tokenAddress),
-            ")"
-        ));
+        console.log(
+            string.concat(
+                "  Approving Permit2 contract (",
+                vm.toString(address(permit2)),
+                ") on token (",
+                vm.toString(tokenAddress),
+                ")"
+            )
+        );
         IERC20(tokenAddress).approve(address(permit2), type(uint256).max);
     }
 
     /// @notice Sets the Permit2 allowance, granting the PositionManager permission to spend the deployer's tokens via Permit2.
     function _setPermit2Allowance(address tokenAddress) internal {
-         // Format string explicitly before logging
-         console.log(string.concat(
-            "  Granting Permit2 allowance for PositionManager (",
-            vm.toString(positionManagerAddress),
-            ") on token (",
-            vm.toString(tokenAddress),
-            ")"
-         ));
-         // Approve PositionManager to spend deployer's tokens via Permit2
-         permit2.approve(
-             tokenAddress,
-             positionManagerAddress,
-             MAX_APPROVAL_AMOUNT,
-             NO_EXPIRATION
-         );
+        // Format string explicitly before logging
+        console.log(
+            string.concat(
+                "  Granting Permit2 allowance for PositionManager (",
+                vm.toString(positionManagerAddress),
+                ") on token (",
+                vm.toString(tokenAddress),
+                ")"
+            )
+        );
+        // Approve PositionManager to spend deployer's tokens via Permit2
+        permit2.approve(tokenAddress, positionManagerAddress, MAX_APPROVAL_AMOUNT, NO_EXPIRATION);
     }
-}
 
+    // add this to be excluded from coverage report
+    function test() public {}
+}

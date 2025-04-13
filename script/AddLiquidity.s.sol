@@ -120,7 +120,12 @@ contract AddLiquidity is Script {
         // }
     }
 
-    function _addLiquidity(address collateralAddress, address tokenAddress, address hookAddress, MarketSetting memory settings) internal {
+    function _addLiquidity(
+        address collateralAddress,
+        address tokenAddress,
+        address hookAddress,
+        MarketSetting memory settings
+    ) internal {
         PoolKey memory poolKey = PoolKey({
             currency0: Currency.wrap(collateralAddress),
             currency1: Currency.wrap(tokenAddress),
@@ -132,7 +137,9 @@ contract AddLiquidity is Script {
         bytes memory actions = abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR));
         bytes[] memory params = new bytes[](2);
 
-        params[0] = abi.encode(poolKey, settings.minTick, settings.maxTick, 0.000001 ether, 1 ether, 1 ether, deployer, bytes(""));
+        params[0] = abi.encode(
+            poolKey, settings.minTick, settings.maxTick, 0.000001 ether, 1 ether, 1 ether, deployer, bytes("")
+        );
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1);
 
         uint256 deadline = block.timestamp + 1800;
@@ -140,4 +147,7 @@ contract AddLiquidity is Script {
 
         positionManager.modifyLiquidities{value: valueToPass}(abi.encode(actions, params), deadline);
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

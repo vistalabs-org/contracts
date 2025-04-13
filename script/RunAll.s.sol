@@ -125,4 +125,7 @@ contract RunAll is Script {
         // No match found
         return false;
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }
