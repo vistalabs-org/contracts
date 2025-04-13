@@ -17,7 +17,7 @@ import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol"; // Dependency issue FIX
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {Market, MarketState, CreateMarketParams} from "../src/types/MarketTypes.sol";
+import {Market, MarketState, MarketSetting, CreateMarketParams} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
 import {ERC20Mock} from "./utils/ERC20Mock.sol"; // USE THIS MOCK
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
@@ -52,6 +52,11 @@ contract PredictionMarketAITest is Test, Deployers {
 
     // Constants
     uint256 public constant COLLATERAL_AMOUNT = 100 * 1e6; // 100 units (assuming 6 decimals)
+    uint24 public constant TEST_FEE = 3000; // 0.3% fee tier
+    int24 public constant TEST_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
+    int24 public constant TEST_STARTING_TICK = 6900; // ~0.5 USDC or 1 USDC = 2 YES
+    int24 public constant TEST_MIN_TICK = 0; // Minimum tick (adjusted by tickSpacing in hook)
+    int24 public constant TEST_MAX_TICK = 207300; // Maximum tick (adjusted by tickSpacing in hook)
 
     // Deployed ERC20 Mock Token
     ERC20Mock public collateralToken;
@@ -363,6 +368,15 @@ contract PredictionMarketAITest is Test, Deployers {
         require(address(collateralToken) != address(0), "Collateral token not initialized");
         require(address(oracle) != address(0), "Oracle not initialized"); // Add oracle check
 
+        // Create a MarketSetting struct
+        MarketSetting memory settings = MarketSetting({
+            fee: TEST_FEE,
+            tickSpacing: TEST_TICK_SPACING,
+            startingTick: TEST_STARTING_TICK,
+            minTick: TEST_MIN_TICK,
+            maxTick: TEST_MAX_TICK
+        });
+
         CreateMarketParams memory params = CreateMarketParams({
             oracle: address(oracle), // Use the connected oracle address
             creator: address(this),
@@ -371,7 +385,7 @@ contract PredictionMarketAITest is Test, Deployers {
             title: "Test Market: Resolve YES",
             description: "This market should resolve to YES",
             duration: 1 days,
-            curveId: 0
+            settings: settings // Add the settings field
         });
 
         console.log("Attempting to create market via hook...");

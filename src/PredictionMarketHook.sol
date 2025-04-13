@@ -10,26 +10,28 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {FixedPointMathLib} from "@uniswap/v4-core/lib/solmate/src/utils/FixedPointMathLib.sol";
-import {Market, MarketState} from "./types/MarketTypes.sol";
+import {Market, MarketState, MarketSetting, CreateMarketParams} from "./types/MarketTypes.sol";
 import {OutcomeToken} from "./OutcomeToken.sol";
 import {console} from "forge-std/console.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPredictionMarketHook} from "./interfaces/IPredictionMarketHook.sol";
 import {PoolCreationHelper} from "./PoolCreationHelper.sol";
-import {CreateMarketParams} from "./types/MarketTypes.sol";
 import {IAIOracleServiceManager} from "./interfaces/IAIOracleServiceManager.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /// @title PredictionMarketHook - Hook for prediction market management
 
-contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
+contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, ReentrancyGuard {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint160;
+    using SafeERC20 for IERC20;
 
     IPoolManager public poolm;
     PoolCreationHelper public poolCreationHelper;
 
-    int24 public TICK_SPACING = 100;
     // Market ID counter
     uint256 private _marketCount;
     mapping(uint256 => PoolId) private _marketPoolIds;
@@ -56,25 +58,44 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // Store Oracle address, set post-deployment
     address private _aiOracleServiceManagerAddress;
 
+    // Custom errors
     error MarketAlreadyResolved();
     error MarketNotResolved();
     error AlreadyClaimed();
     error InvalidOracleAddress();
     error InvalidTickRange();
+    error MarketNotFound();
+    error MarketNotActive();
+    error MarketNotClosed();
+    error MarketNotInCreatedState();
+    error MarketNotInResolutionOrDisputePhase();
+    error NotAuthorizedToCancelMarket();
+    error MarketCannotBeCancelledInCurrentState();
+    error NoTokensToClaim();
+    error NoTokensToRedeem();
+    error InsufficientCollateralRemaining();
+    error InvalidTokenAddressOrdering();
+    error TickBelowMinimumValidTick();
+    error TickAboveMaximumValidTick();
+    error MarketIdCannotBeZero();
+    error OnlyConfiguredOracleAllowed();
+    error MarketNotCancelled();
 
-    // Event for Oracle Address Update
-    event OracleServiceManagerSet(address indexed newOracleAddress);
-
+    /// @notice Constructor to initialize the hook
+    /// @param _poolManager The address of the Uniswap V4 PoolManager
+    /// @param _poolCreationHelper The address of the PoolCreationHelper contract
+    /// @param initialOwner The address to receive initial ownership
     constructor(IPoolManager _poolManager, PoolCreationHelper _poolCreationHelper, address initialOwner)
         BaseHook(_poolManager)
-        Ownable(msg.sender)
+        Ownable(msg.sender) // Owner is deployer initially
     {
         poolm = IPoolManager(_poolManager);
         poolCreationHelper = PoolCreationHelper(_poolCreationHelper);
-
-        _transferOwnership(initialOwner);
+        _transferOwnership(initialOwner); // Transfer ownership to the intended owner
     }
 
+    /// @notice Defines the hook permissions required by this contract
+    /// @return Permissions struct indicating which hook points are implemented
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
@@ -98,6 +119,15 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
+    /// @notice Hook called before a swap occurs
+    /// @dev Ensures the market associated with the pool is active before allowing the swap.
+    /// @param sender The address initiating the swap
+    /// @param key The PoolKey identifying the pool
+    /// @param params Parameters for the swap operation
+    /// @param data Arbitrary data passed by the caller
+    /// @return selector The selector of this function (beforeSwap)
+    /// @return deltaBefore The swap delta to apply before the swap (always zero here)
+    /// @return hookData Data to be passed to the afterSwap hook (always zero here)
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -106,10 +136,19 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
-        require(market.state == MarketState.Active, "Market not open for trading");
+        if (market.state != MarketState.Active) {
+            revert MarketNotActive();
+        }
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /// @notice Hook called before liquidity is added
+    /// @dev Ensures the market is active and the provided liquidity tick range is valid for the market settings.
+    /// @param sender The address adding liquidity
+    /// @param key The PoolKey identifying the pool
+    /// @param params Parameters for modifying liquidity
+    /// @param data Arbitrary data passed by the caller
+    /// @return selector The selector of this function (beforeAddLiquidity)
     function _beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
@@ -118,37 +157,41 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     ) internal view override returns (bytes4) {
         PoolId poolId = key.toId();
         Market storage market = _getMarketFromPoolId(poolId);
-        require(market.state == MarketState.Active, "Market not active for adding liquidity");
+        if (market.state != MarketState.Active) {
+            revert MarketNotActive();
+        }
 
-        // Price of 1 YES = 1 USDC corresponds to tick 0 (maximum YES value)
-        int24 minValidTick = 0;
+        // Use min/max ticks from market settings
+        // Note: Need to ensure min/max ticks are adjusted for tickSpacing during setting creation or here
+        int24 minValidTick = (market.settings.minTick / market.settings.tickSpacing) * market.settings.tickSpacing;
+        int24 maxValidTick = (market.settings.maxTick / market.settings.tickSpacing) * market.settings.tickSpacing;
 
-        // Price of 1 YES = 10^-9 USDC corresponds to tick 207233 (minimum YES value)
-        int24 maxValidTick = 207233;
-
-        // Adjust for tick spacing
-        minValidTick = (minValidTick / TICK_SPACING) * TICK_SPACING;
-        maxValidTick = (maxValidTick / TICK_SPACING) * TICK_SPACING;
-
-        // Check that the liquidity position is entirely within the valid range
-        require(params.tickLower >= minValidTick, "Lower tick cannot be below minimum valid tick");
-        require(params.tickUpper <= maxValidTick, "Upper tick cannot be above maximum valid tick");
+        // Check that the liquidity position is entirely within the valid range defined by market settings
+        if (params.tickLower < minValidTick) {
+             revert TickBelowMinimumValidTick(); // Potentially rename error or add context
+        }
+        if (params.tickUpper > maxValidTick) {
+             revert TickAboveMaximumValidTick(); // Potentially rename error or add context
+        }
 
         return BaseHook.beforeAddLiquidity.selector;
     }
 
     //////////////////////////
-    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public returns (bytes32) {
+    /// @notice Creates a new prediction market, associated Uniswap pools, and deposits initial collateral.
+    /// @dev Deploys YES/NO outcome tokens using CREATE2, creates YES/collateral and NO/collateral pools,
+    /// @dev transfers collateral from the creator, stores market details, and mints initial outcome tokens to the creator.
+    /// @param params Struct containing all necessary parameters for market creation.
+    /// @return marketId The unique identifier (keccak256 hash) for the newly created market.
+    function createMarketAndDepositCollateral(CreateMarketParams calldata params) public override nonReentrant returns (bytes32) {
         // Generate a truly unique market ID
         bytes32 marketId = keccak256(
             abi.encodePacked(
                 params.creator,
                 params.title,
                 params.description,
-                block.timestamp,
                 _marketNonce++,
-                msg.sender,
-                block.number
+                msg.sender
             )
         );
 
@@ -189,33 +232,37 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         }
 
         // If we couldn't get valid tokens after multiple attempts, revert
-        require(validTokens, "Failed to create tokens with correct address ordering");
+        if (!validTokens) {
+            revert InvalidTokenAddressOrdering();
+        }
 
-        // Create pool keys with guaranteed ordering
+        // Use settings from params
+        MarketSetting memory settings = params.settings;
+
+        // Create pool keys with guaranteed ordering using settings from params
         PoolKey memory yesPoolKey = PoolKey({
             currency0: Currency.wrap(collateral),
             currency1: Currency.wrap(address(yesToken)),
-            fee: 10000,
-            tickSpacing: 100,
+            fee: settings.fee, // Use fee from settings
+            tickSpacing: settings.tickSpacing, // Use tickSpacing from settings
             hooks: IHooks(address(this))
         });
 
         PoolKey memory noPoolKey = PoolKey({
             currency0: Currency.wrap(collateral),
             currency1: Currency.wrap(address(noToken)),
-            fee: 10000,
-            tickSpacing: 100,
+            fee: settings.fee, // Use fee from settings
+            tickSpacing: settings.tickSpacing, // Use tickSpacing from settings
             hooks: IHooks(address(this))
         });
 
         // Create both pools
-        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey);
-        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey);
+        // Consider passing startingTick from settings if createUniswapPoolWithCollateral supports it
+        poolCreationHelper.createUniswapPoolWithCollateral(yesPoolKey, settings.startingTick);
+        poolCreationHelper.createUniswapPoolWithCollateral(noPoolKey, settings.startingTick);
 
-        require(
-            IERC20(collateral).transferFrom(params.creator, address(this), params.collateralAmount),
-            "Collateral transfer to hook failed"
-        );
+        // Use safeTransferFrom correctly
+        IERC20(collateral).safeTransferFrom(params.creator, address(this), params.collateralAmount);
 
         // Store market info
         console.log("Storing market info");
@@ -233,7 +280,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
             title: params.title,
             description: params.description,
             endTimestamp: block.timestamp + params.duration,
-            curveId: params.curveId
+            settings: settings // Store the settings struct
         });
 
         // Map both pool IDs to this market ID
@@ -249,15 +296,19 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         return marketId;
     }
 
-    // mint YES / NO tokens based on collateral amount
-    // Users can mint based on current price to provide liquidity to the market
-    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount, address collateralAddress) public {
+    /// @notice Allows users to mint equal amounts of YES and NO tokens by providing collateral.
+    /// @dev This increases the total collateral backing the market and provides the user with outcome tokens.
+    /// @param marketId The ID of the market for which to mint tokens.
+    /// @param collateralAmount The amount of collateral the user is providing.
+    /// @param collateralAddress The address of the collateral token being provided.
+    function mintOutcomeTokens(bytes32 marketId, uint256 collateralAmount, address collateralAddress) public override {
         // Check if market exists
-        require(_markets[marketId].creator != address(0), "Market not found");
+        if (_markets[marketId].creator == address(0)) {
+            revert MarketNotFound();
+        }
 
         // Calculate collateral to return (accounting for decimal differences)
-        // YES/NO tokens have 18 decimals, collateral might have different decimals
-        uint256 collateralDecimals = ERC20(collateralAddress).decimals();
+        uint256 collateralDecimals = IERC20Metadata(collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
 
         // update total collateral in the market
@@ -271,12 +322,15 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         _markets[marketId].noToken.mint(msg.sender, tokenAmount);
     }
 
-    // Function to get all market IDs
+    /// @notice Retrieves all market IDs managed by this hook contract.
+    /// @return An array containing the unique IDs of all created markets.
     function getAllMarketIds() external view override returns (bytes32[] memory) {
         return _allMarketIds;
     }
 
-    // Function to get all markets with details
+    /// @notice Retrieves the full details for all markets managed by this hook.
+    /// @dev Be cautious calling this on-chain for a large number of markets due to gas costs.
+    /// @return An array of Market structs containing details for every market.
     function getAllMarkets() external view override returns (Market[] memory) {
         uint256 count = _allMarketIds.length;
         Market[] memory _marketList = new Market[](count); // Rename local variable
@@ -288,7 +342,10 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         return _marketList;
     }
 
-    // Function to get markets with pagination
+    /// @notice Retrieves a paginated list of market details.
+    /// @param offset The starting index (0-based) of the markets to retrieve.
+    /// @param limit The maximum number of markets to return.
+    /// @return An array of Market structs for the requested page.
     function getMarkets(uint256 offset, uint256 limit) external view override returns (Market[] memory) {
         uint256 count = _allMarketIds.length;
 
@@ -309,7 +366,8 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         return _marketList;
     }
 
-    // Function to get market count - RENAME back to match interface
+    /// @notice Returns the total number of markets created by this hook.
+    /// @return The count of all markets.
     function getMarketCount() external view override returns (uint256) {
         return _allMarketIds.length;
     }
@@ -323,7 +381,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     /// @param marketId The ID of the market to activate.
     function activateMarket(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Created, "Market not in created state");
+        if (market.state != MarketState.Created) {
+            revert MarketNotInCreatedState();
+        }
         market.state = MarketState.Active;
         emit MarketActivated(marketId);
     }
@@ -334,7 +394,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     function closeMarket(bytes32 marketId) external override {
         // Renamed from closeTrading
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Active, "Market not active");
+        if (market.state != MarketState.Active) {
+            revert MarketNotActive();
+        }
         market.state = MarketState.Closed; // Updated state name
         emit MarketClosed(marketId);
     }
@@ -344,7 +406,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     /// @param marketId The ID of the market
     function enterResolution(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Closed, "Market not closed"); // Check for Closed state
+        if (market.state != MarketState.Closed) {
+            revert MarketNotClosed();
+        }
         market.state = MarketState.InResolution;
         // Emit ResolutionStarted event
 
@@ -367,13 +431,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     /// @param outcome true for YES, false for NO
     function resolveMarket(bytes32 marketId, bool outcome) external override {
         // Ensure only the configured oracle can call this
-        require(msg.sender == _aiOracleServiceManagerAddress, "Only configured oracle allowed");
+        if (msg.sender != _aiOracleServiceManagerAddress) {
+            revert OnlyConfiguredOracleAllowed();
+        }
 
         Market storage market = _markets[marketId];
-        require(
-            market.state == MarketState.InResolution || market.state == MarketState.Disputed,
-            "Market not in resolution or dispute phase"
-        );
+        if (market.state != MarketState.InResolution && market.state != MarketState.Disputed) {
+            revert MarketNotInResolutionOrDisputePhase();
+        }
         market.state = MarketState.Resolved;
         market.outcome = outcome;
         emit MarketResolved(marketId, outcome, msg.sender);
@@ -384,16 +449,14 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     function cancelMarket(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
         // Check if caller is oracle or creator
-        require(
-            msg.sender == _aiOracleServiceManagerAddress || msg.sender == market.creator, "Not authorized to cancel"
-        );
+        if (msg.sender != _aiOracleServiceManagerAddress && msg.sender != market.creator) {
+            revert NotAuthorizedToCancelMarket();
+        }
 
         // Check if market can be cancelled (Created, Active, or Closed)
-        require(
-            market.state == MarketState.Created || market.state == MarketState.Active
-                || market.state == MarketState.Closed,
-            "Market cannot be cancelled in current state"
-        );
+        if (market.state != MarketState.Created && market.state != MarketState.Active && market.state != MarketState.Closed) {
+            revert MarketCannotBeCancelledInCurrentState();
+        }
         market.state = MarketState.Cancelled;
         emit MarketCancelled(marketId);
     }
@@ -403,7 +466,9 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     /// @param marketId The ID of the market
     function disputeResolution(bytes32 marketId) external override {
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Resolved, "Market not resolved");
+        if (market.state != MarketState.Resolved) {
+            revert MarketNotResolved();
+        }
         market.state = MarketState.Disputed;
         emit MarketDisputed(marketId);
     }
@@ -412,46 +477,81 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     //////// Core Logic ///////
     //////////////////////////
 
-    /// @notice Allows users to claim collateral based on their winning token holdings
+    /// @notice Allows users to claim collateral based on their winning token holdings following the Checks-Effects-Interactions pattern.
     /// @param marketId The ID of the market
-    function claimWinnings(bytes32 marketId) external override {
+    function claimWinnings(bytes32 marketId) external override nonReentrant {
+        // --- Setup ---
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Resolved, "Market not resolved");
-        if (_hasClaimed[marketId][msg.sender]) {
+        address sender = msg.sender; // Cache msg.sender
+
+        // --- Checks ---
+        // 1. Check market state
+        if (market.state != MarketState.Resolved) {
+            revert MarketNotResolved();
+        }
+
+        // 2. Check if already claimed by this user
+        if (_hasClaimed[marketId][sender]) {
             revert AlreadyClaimed();
         }
-        address winningToken;
+
+        // 3. Determine winning token and get user's balance (Interaction - external read, necessary for checks)
+        address winningTokenAddress;
         if (market.outcome) {
-            winningToken = address(market.yesToken);
+            winningTokenAddress = address(market.yesToken);
         } else {
-            winningToken = address(market.noToken);
+            winningTokenAddress = address(market.noToken);
         }
-        uint256 tokenBalance = OutcomeToken(winningToken).balanceOf(msg.sender);
-        require(tokenBalance > 0, "No tokens to claim");
-        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
-        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
-        uint256 claimAmount = tokenBalance / decimalAdjustment;
-        console.log("claim amount: %s", claimAmount);
-        uint256 remainingCollateral = market.totalCollateral - _claimedTokens[marketId];
-        console.log("remaining collateral: %s", remainingCollateral);
-        require(claimAmount <= remainingCollateral, "Insufficient collateral remaining");
-        OutcomeToken(winningToken).burnFrom(msg.sender, tokenBalance);
-        IERC20(market.collateralAddress).transfer(msg.sender, claimAmount);
-        _claimedTokens[marketId] += claimAmount;
-        _hasClaimed[marketId][msg.sender] = true;
-        emit WinningsClaimed(marketId, msg.sender, claimAmount);
+        OutcomeToken winningToken = OutcomeToken(winningTokenAddress);
+        uint256 tokenBalance = winningToken.balanceOf(sender);
+
+        // 4. Check if user has winning tokens
+        if (tokenBalance == 0) {
+            revert NoTokensToClaim();
+        }
+
+        // 5. Calculate claim amount based on collateral decimals (Interaction - external read, necessary for checks)
+        IERC20Metadata collateralTokenMeta = IERC20Metadata(market.collateralAddress);
+        uint256 collateralDecimals = collateralTokenMeta.decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals); // Assumes outcome token decimals are 18
+        uint256 claimAmount = tokenBalance / decimalAdjustment; // Calculate the equivalent collateral amount
+
+        // 6. Check if sufficient collateral remains in the contract's pool
+        uint256 currentlyClaimed = _claimedTokens[marketId];
+        if (claimAmount > market.totalCollateral - currentlyClaimed) {
+             revert InsufficientCollateralRemaining();
+        }
+
+        // --- Effects ---
+        // Update state variables *before* external interactions
+        _claimedTokens[marketId] = currentlyClaimed + claimAmount; // Increment total claimed amount for the market
+        _hasClaimed[marketId][sender] = true; // Mark this user as having claimed
+
+        // --- Interactions ---
+        // 1. Burn the user's winning outcome tokens
+        winningToken.burnFrom(sender, tokenBalance);
+
+        // 2. Transfer the calculated collateral amount to the user
+        IERC20(market.collateralAddress).safeTransfer(sender, claimAmount);
+
+        // Emit event after successful completion of effects and interactions
+        emit WinningsClaimed(marketId, sender, claimAmount);
     }
 
     /// @notice Allows users to redeem their collateral if the market is cancelled
     /// @param marketId The ID of the market
-    function redeemCollateral(bytes32 marketId) external override {
+    function redeemCollateral(bytes32 marketId) external override nonReentrant {
         Market storage market = _markets[marketId];
-        require(market.state == MarketState.Cancelled, "Market not cancelled");
+        if (market.state != MarketState.Cancelled) {
+            revert MarketNotCancelled();
+        }
         uint256 yesBalance = market.yesToken.balanceOf(msg.sender);
         uint256 noBalance = market.noToken.balanceOf(msg.sender);
         uint256 totalTokens = yesBalance + noBalance;
-        require(totalTokens > 0, "No tokens to redeem");
-        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        if (totalTokens == 0) {
+            revert NoTokensToRedeem();
+        }
+        uint256 collateralDecimals = IERC20Metadata(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 redeemAmount = totalTokens / decimalAdjustment;
         if (yesBalance > 0) {
@@ -460,26 +560,42 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
         if (noBalance > 0) {
             market.noToken.burnFrom(msg.sender, noBalance);
         }
-        IERC20(market.collateralAddress).transfer(msg.sender, redeemAmount);
+        IERC20(market.collateralAddress).safeTransfer(msg.sender, redeemAmount);
     }
 
-    // Implement getters manually
+    /// @notice Gets market details for a given pool ID.
+    /// @dev A market consists of two pools (YES/collateral, NO/collateral). This resolves either pool ID to the market struct.
+    /// @param poolId The PoolId of either the YES or NO token pool associated with the market.
+    /// @return The Market struct containing details about the associated market.
     function markets(PoolId poolId) external view override returns (Market memory) {
         return _getMarketFromPoolId(poolId);
     }
 
+    /// @notice Returns the total number of markets created (duplicate of getMarketCount, potentially removable if interface adjusted).
+    /// @return The count of created markets.
     function marketCount() external view returns (uint256) {
         return _marketCount;
     }
 
-    function marketPoolIds(uint256 index) external view returns (PoolId) {
+    /// @notice Returns the PoolId of a market pool based on an internal index.
+    /// @dev This likely corresponds to the creation order but depends on internal storage (`_marketPoolIds`). Use with caution.
+    /// @param index The index in the internal mapping.
+    /// @return The PoolId stored at that index.
+    function marketPoolIds(uint256 index) external view override returns (PoolId) {
         return _marketPoolIds[index];
     }
 
+    /// @notice Returns the total amount of collateral claimed for a specific market.
+    /// @param marketId The ID of the market.
+    /// @return The total collateral claimed so far.
     function claimedTokens(bytes32 marketId) external view override returns (uint256) {
         return _claimedTokens[marketId];
     }
 
+    /// @notice Checks if a specific user has already claimed their winnings for a given market.
+    /// @param marketId The ID of the market.
+    /// @param user The address of the user to check.
+    /// @return true if the user has claimed, false otherwise.
     function hasClaimed(bytes32 marketId, address user) external view override returns (bool) {
         return _hasClaimed[marketId][user];
     }
@@ -487,18 +603,29 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
     // Helper function to get market from pool ID
     function _getMarketFromPoolId(PoolId poolId) internal view returns (Market storage) {
         bytes32 marketId = _poolToMarketId[poolId];
-        require(marketId != bytes32(0), "Market not found");
+        if (marketId == bytes32(0)) {
+            revert MarketNotFound();
+        }
         return _markets[marketId];
     }
 
+    /// @notice Retrieves market details using the market's unique ID.
+    /// @param marketId The unique ID of the market.
+    /// @return The Market struct containing details for the specified market.
     function getMarketById(bytes32 marketId) external view override returns (Market memory) {
-        require(marketId != bytes32(0), "Market ID cannot be zero"); // Add basic check
+        if (marketId == bytes32(0)) {
+            revert MarketIdCannotBeZero();
+        }
         return _markets[marketId];
     }
 
+    /// @notice Mints initial YES and NO outcome tokens to the market creator.
+    /// @dev Internal function called during market creation. Assumes collateral has already been transferred to the hook.
+    /// @param marketId The ID of the market being created.
+    /// @param collateralAmount The amount of collateral deposited by the creator.
     function mintOutcomeTokensForCreator(bytes32 marketId, uint256 collateralAmount) internal {
         Market storage market = _markets[marketId];
-        uint256 collateralDecimals = ERC20(market.collateralAddress).decimals();
+        uint256 collateralDecimals = IERC20Metadata(market.collateralAddress).decimals();
         uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
         uint256 tokenAmount = collateralAmount * decimalAdjustment;
         market.yesToken.mint(market.creator, tokenAmount);
@@ -516,6 +643,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable {
 
     /// @notice Returns the stored address of the AI Oracle Service Manager.
     /// @dev Required by the IPredictionMarketHook interface.
+    /// @return The address of the configured IAIOracleServiceManager.
     function aiOracleServiceManager() public view override returns (address) {
         return _aiOracleServiceManagerAddress;
     }

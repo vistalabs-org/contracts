@@ -17,7 +17,7 @@ import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {Market, MarketState, CreateMarketParams} from "../src/types/MarketTypes.sol";
+import {Market, MarketState, MarketSetting, CreateMarketParams} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
 import {ERC20Mock} from "./utils/ERC20Mock.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
@@ -41,6 +41,13 @@ contract PredictionMarketHookTest is Test, Deployers {
     PoolSwapTest public poolSwapTest;
     PoolModifyLiquidityTest public poolModifyLiquidityTest;
     StateView public stateView;
+
+    // Add these constants at the top of the test contract after other state variables
+    uint24 public constant TEST_FEE = 3000; // 0.3% fee tier
+    int24 public constant TEST_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
+    int24 public constant TEST_STARTING_TICK = 6900; // ~0.5 USDC or 1 USDC = 2 YES
+    int24 public constant TEST_MIN_TICK = 0; // Minimum tick (adjusted by tickSpacing in hook)
+    int24 public constant TEST_MAX_TICK = 207300; // Maximum tick (adjusted by tickSpacing in hook)
 
     function setUp() public {
         // Deploy Uniswap v4 infrastructure
@@ -129,6 +136,14 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     // Modifier to create a market and return its ID
     modifier createMarket(bytes32 marketId) {
+        MarketSetting memory settings = MarketSetting({
+            fee: TEST_FEE,
+            tickSpacing: TEST_TICK_SPACING,
+            startingTick: TEST_STARTING_TICK,
+            minTick: TEST_MIN_TICK,
+            maxTick: TEST_MAX_TICK
+        });
+
         CreateMarketParams memory params = CreateMarketParams({
             oracle: address(oracleManager),
             creator: address(this),
@@ -137,7 +152,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
             duration: 30 days,
-            curveId: 0
+            settings: settings
         });
 
         marketId = hook.createMarketAndDepositCollateral(params);
@@ -188,6 +203,15 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     // Modifier to create a market and add liquidity
     modifier createMarketWithLiquidity(bytes32 marketId) {
+        // Create the MarketSetting struct first
+        MarketSetting memory settings = MarketSetting({
+            fee: TEST_FEE,
+            tickSpacing: TEST_TICK_SPACING,
+            startingTick: TEST_STARTING_TICK,
+            minTick: TEST_MIN_TICK,
+            maxTick: TEST_MAX_TICK
+        });
+        
         // Create market first
         CreateMarketParams memory params = CreateMarketParams({
             oracle: address(oracleManager),
@@ -197,11 +221,11 @@ contract PredictionMarketHookTest is Test, Deployers {
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
             duration: 30 days,
-            curveId: 0
+            settings: settings // Now settings is properly defined
         });
 
         marketId = hook.createMarketAndDepositCollateral(params);
-
+        
         // Get market details
         Market memory market = hook.getMarketById(marketId);
 
@@ -212,8 +236,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Set up price range for prediction market (0.01-0.99)
         int24 tickSpacing = 100;
         int24 minTick = 0; // ~0.01 USDC
-        int24 maxTick = 20700; // ~0.99 USDC
-        int24 initialTick = 6900; // ~0.5 USDC
+        int24 maxTick = 207000; // ~0.99 USDC
+        int24 initialTick = 6900; // ~0.5 USDC or 1 USDC = 2 YES
 
         // Ensure ticks are valid with the tick spacing
         minTick = (minTick / tickSpacing) * tickSpacing;
@@ -321,6 +345,14 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     // Instead of trying to modify the parameter, return the value
     function createTestMarket() internal returns (bytes32) {
+        MarketSetting memory settings = MarketSetting({
+            fee: TEST_FEE,
+            tickSpacing: TEST_TICK_SPACING,
+            startingTick: TEST_STARTING_TICK,
+            minTick: TEST_MIN_TICK,
+            maxTick: TEST_MAX_TICK
+        });
+
         CreateMarketParams memory params = CreateMarketParams({
             oracle: address(oracleManager),
             creator: address(this),
@@ -329,7 +361,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             title: "Will ETH reach $10k in 2024?",
             description: "Market resolves to YES if ETH price reaches $10,000 before Dec 31, 2024",
             duration: 30 days,
-            curveId: 0
+            settings: settings
         });
 
         return hook.createMarketAndDepositCollateral(params);

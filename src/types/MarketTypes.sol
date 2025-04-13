@@ -12,7 +12,14 @@ enum MarketState {
     Resolved, // Final outcome determined, winnings can be claimed
     Cancelled, // Market cancelled, collateral can be redeemed
     Disputed // Market resolution is disputed
+}
 
+struct MarketSetting {
+    uint24 fee;           // Uniswap pool fee tier (e.g., 500 for 0.05%)
+    int24 tickSpacing;    // Tick spacing corresponding to the fee tier
+    int24 startingTick;   // The initial tick for the pool (optional, might not be used directly at pool creation)
+    int24 maxTick;        // Maximum allowable tick for liquidity in this market
+    int24 minTick;        // Minimum allowable tick for liquidity in this market
 }
 
 struct Market {
@@ -29,7 +36,7 @@ struct Market {
     string title; // Market title
     string description; // Market description
     uint256 endTimestamp; // Market end time
-    uint256 curveId;
+    MarketSetting settings;
 }
 
 struct CreateMarketParams {
@@ -40,5 +47,5 @@ struct CreateMarketParams {
     string title;
     string description;
     uint256 duration;
-    uint256 curveId;
+    MarketSetting settings;
 }

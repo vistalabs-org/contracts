@@ -22,7 +22,7 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 
 // Local project contracts & types
 import {ERC20Mock} from "../test/utils/ERC20Mock.sol";
-import {Market, MarketState} from "../src/types/MarketTypes.sol";
+import {Market, MarketState, MarketSetting} from "../src/types/MarketTypes.sol";
 import {OutcomeToken} from "../src/OutcomeToken.sol";
 
 /**
@@ -39,6 +39,12 @@ contract AddLiquidity is Script {
     PredictionMarketHook public hook;
     PositionManager public positionManager;
     ERC20Mock public collateralToken;
+
+    // Market settings constants
+    uint24 public constant MARKET_FEE = 3000; // 0.3% fee tier
+    int24 public constant MARKET_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
+    int24 public constant MARKET_MIN_TICK = 0; // Minimum tick
+    int24 public constant MARKET_MAX_TICK = 207000; // Maximum tick
 
     // --- Script State ---
     address private deployer;
@@ -107,25 +113,26 @@ contract AddLiquidity is Script {
         ERC20Mock(noToken).approve(address(permit2), type(uint256).max);
         permit2.approve(address(noToken), positionManagerAddress, type(uint160).max, type(uint48).max);
 
-        _addLiquidity(collateralAddr, address(yesToken), hookAddress);
-        _addLiquidity(collateralAddr, address(noToken), hookAddress);
+        // Use the market's actual settings
+        _addLiquidity(collateralAddr, address(yesToken), hookAddress, market.settings);
+        _addLiquidity(collateralAddr, address(noToken), hookAddress, market.settings);
 
         // }
     }
 
-    function _addLiquidity(address collateralAddress, address tokenAddress, address hookAddress) internal {
+    function _addLiquidity(address collateralAddress, address tokenAddress, address hookAddress, MarketSetting memory settings) internal {
         PoolKey memory poolKey = PoolKey({
             currency0: Currency.wrap(collateralAddress),
             currency1: Currency.wrap(tokenAddress),
-            fee: 10000,
+            fee: settings.fee,
             hooks: IHooks(hookAddress),
-            tickSpacing: 100
+            tickSpacing: settings.tickSpacing
         });
 
         bytes memory actions = abi.encodePacked(uint8(Actions.MINT_POSITION), uint8(Actions.SETTLE_PAIR));
         bytes[] memory params = new bytes[](2);
 
-        params[0] = abi.encode(poolKey, 0, 207000, 0.000001 ether, 1 ether, 1 ether, deployer, bytes(""));
+        params[0] = abi.encode(poolKey, settings.minTick, settings.maxTick, 0.000001 ether, 1 ether, 1 ether, deployer, bytes(""));
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1);
 
         uint256 deadline = block.timestamp + 1800;
