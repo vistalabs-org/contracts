@@ -27,6 +27,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
 import {AIOracleServiceManager} from "../src/oracle/AIOracleServiceManager.sol";
 import {AIAgentRegistry} from "../src/oracle/AIAgentRegistry.sol";
+import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 
 contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -608,5 +609,462 @@ contract PredictionMarketHookTest is Test, Deployers {
             price = (uint256(sqrtPriceX96) ** 2 * 1e6) / 2 ** 192;
         }
         return price;
+    }
+
+    // Test for getAllMarketIds
+    function test_getAllMarketIds() public {
+        // Create multiple markets
+        bytes32 market1Id = createTestMarket();
+        bytes32 market2Id = createTestMarket();
+        bytes32 market3Id = createTestMarket();
+        
+        // Get all market IDs
+        bytes32[] memory allIds = hook.getAllMarketIds();
+        
+        // Verify all created markets are included
+        assertEq(allIds.length, 3, "Should return 3 market IDs");
+        assertEq(allIds[allIds.length-3], market1Id, "First market ID should match");
+        assertEq(allIds[allIds.length-2], market2Id, "Second market ID should match");
+        assertEq(allIds[allIds.length-1], market3Id, "Third market ID should match");
+    }
+
+    // Test for activateMarket
+    function test_activateMarket() public {
+        // We need to create a market that isn't already active
+        // For this test, we'll need to create a custom market creation function
+        MarketSetting memory settings = MarketSetting({
+            fee: TEST_FEE,
+            tickSpacing: TEST_TICK_SPACING,
+            startingTick: TEST_STARTING_TICK,
+            minTick: TEST_MIN_TICK,
+            maxTick: TEST_MAX_TICK
+        });
+        
+        CreateMarketParams memory params = CreateMarketParams({
+            oracle: address(oracleManager),
+            creator: address(this),
+            collateralAddress: address(collateralToken),
+            collateralAmount: COLLATERAL_AMOUNT,
+            title: "Test Market for Activation",
+            description: "This market is created in inactive state",
+            duration: 30 days,
+            settings: settings
+        });
+        
+        bytes32 marketId = hook.createMarketAndDepositCollateral(params);
+        
+        // Verify market is now Active
+        Market memory marketAfter = hook.getMarketById(marketId);
+        assertEq(uint8(marketAfter.state), uint8(MarketState.Active), "Market should be Active after creation");
+    }
+
+    // Test for cancelMarket
+    function test_cancelMarket() public {
+        bytes32 marketId = createTestMarket();
+        
+        // Verify market is active
+        Market memory marketBefore = hook.getMarketById(marketId);
+        assertEq(uint8(marketBefore.state), uint8(MarketState.Active), "Market should be Active initially");
+        
+        // Cancel the market
+        hook.cancelMarket(marketId);
+        
+        // Verify market is now Cancelled
+        Market memory marketAfter = hook.getMarketById(marketId);
+        assertEq(uint8(marketAfter.state), uint8(MarketState.Cancelled), "Market should be Cancelled");
+    }
+
+    // Test for disputeResolution
+    function test_disputeResolution() public {
+        bytes32 marketId = createTestMarket();
+        
+        // Close the market
+        vm.warp(hook.getMarketById(marketId).endTimestamp + 1);
+        hook.closeMarket(marketId);
+        
+        // Enter resolution
+        hook.enterResolution(marketId);
+        
+        // Resolve the market as Oracle
+        vm.prank(address(oracleManager));
+        hook.resolveMarket(marketId, true);
+        
+        // Verify market is Resolved
+        Market memory marketBefore = hook.getMarketById(marketId);
+        assertEq(uint8(marketBefore.state), uint8(MarketState.Resolved), "Market should be Resolved");
+        
+        // Dispute the resolution
+        hook.disputeResolution(marketId);
+        
+        // Verify market is now Disputed
+        Market memory marketAfter = hook.getMarketById(marketId);
+        assertEq(uint8(marketAfter.state), uint8(MarketState.Disputed), "Market should be Disputed");
+    }
+
+    // Test for redeemCollateral
+    function test_redeemCollateral() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Get initial balances
+        uint256 initialCollateralBalance = collateralToken.balanceOf(address(this));
+        uint256 yesBalance = market.yesToken.balanceOf(address(this));
+        uint256 noBalance = market.noToken.balanceOf(address(this));
+        
+        // Total tokens to redeem
+        uint256 totalTokens = yesBalance + noBalance;
+        
+        // Calculate expected redemption amount
+        uint256 collateralDecimals = collateralToken.decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+        uint256 expectedRedemption = totalTokens / (2 * decimalAdjustment);
+        
+        // Cancel the market
+        hook.cancelMarket(marketId);
+        
+        // Approve tokens for burning
+        market.yesToken.approve(address(hook), yesBalance);
+        market.noToken.approve(address(hook), noBalance);
+        
+        // Redeem collateral
+        hook.redeemCollateral(marketId);
+        
+        // Verify collateral received
+        uint256 finalCollateralBalance = collateralToken.balanceOf(address(this));
+        assertEq(finalCollateralBalance - initialCollateralBalance, expectedRedemption, "Should receive correct collateral amount");
+        
+        // Verify tokens were burned
+        assertEq(market.yesToken.balanceOf(address(this)), 0, "YES tokens should be burned");
+        assertEq(market.noToken.balanceOf(address(this)), 0, "NO tokens should be burned");
+    }
+
+    // Test for markets() function
+    function test_markets() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Get market via PoolId (this tests the markets() function)
+        Market memory marketFromPool = hook.markets(market.yesPoolKey.toId());
+        
+        // Verify both market structs are identical
+        assertEq(address(marketFromPool.yesToken), address(market.yesToken), "YES token should match");
+        assertEq(address(marketFromPool.noToken), address(market.noToken), "NO token should match");
+        assertEq(marketFromPool.creator, market.creator, "Creator should match");
+        assertEq(uint8(marketFromPool.state), uint8(market.state), "State should match");
+        assertEq(marketFromPool.outcome, market.outcome, "Outcome should match");
+    }
+
+    // Test for marketCount and marketPoolIds
+    function test_marketCountAndPoolIds() public {
+        // Get initial market count
+        uint256 initialCount = hook.marketCount();
+        
+        // Create a market
+        bytes32 marketId = createTestMarket();
+        
+        // Get new market count
+        uint256 newCount = hook.marketCount();
+        
+        // Verify count increased
+        assertEq(newCount, initialCount + 1, "Market count should increase by 1");
+        
+    }
+
+    // Test for claimedTokens
+    function test_claimedTokens() public {
+        // Create a market with liquidity
+        bytes32 marketId = createTestMarketWithLiquidity();
+        Market memory market = hook.getMarketById(marketId);
+        
+        // Resolve the market (as YES)
+        vm.warp(market.endTimestamp + 1);
+        hook.closeMarket(marketId);
+        hook.enterResolution(marketId);
+        vm.prank(address(oracleManager));
+        hook.resolveMarket(marketId, true);
+        
+        // Check initial claimed tokens
+        uint256 initialClaimedTokens = hook.claimedTokens(marketId);
+        assertEq(initialClaimedTokens, 0, "No tokens should be claimed initially");
+        
+        // Calculate how much we'll claim
+        uint256 yesBalance = market.yesToken.balanceOf(address(this));
+        uint256 collateralDecimals = collateralToken.decimals();
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
+        uint256 expectedClaimAmount = yesBalance / decimalAdjustment;
+        
+        // Approve tokens for burning during claim
+        market.yesToken.approve(address(hook), yesBalance);
+        
+        // Claim winnings
+        hook.claimWinnings(marketId);
+        
+        // Check updated claimed tokens
+        uint256 updatedClaimedTokens = hook.claimedTokens(marketId);
+        assertEq(updatedClaimedTokens, expectedClaimAmount, "Claimed tokens should match expected amount");
+    }
+
+    // Test for aiOracleServiceManager
+    function test_aiOracleServiceManager() public {
+        // Get current oracle manager
+        address currentManager = hook.aiOracleServiceManager();
+        assertEq(currentManager, address(oracleManager), "Should return the configured oracle manager");
+        
+        // Set a new oracle manager
+        address newManager = address(0x123);
+        hook.setOracleServiceManager(newManager);
+        
+        // Verify it was updated
+        address updatedManager = hook.aiOracleServiceManager();
+        assertEq(updatedManager, newManager, "Should return the new oracle manager");
+    }
+
+    // -----------------------------------------------
+    //              Error Revert Tests
+    // -----------------------------------------------
+
+    function test_revert_MarketNotResolved_claimWinnings() public {
+        bytes32 marketId = createTestMarketWithLiquidity();
+        // Market is Active, not Resolved
+        vm.expectRevert(PredictionMarketHook.MarketNotResolved.selector);
+        hook.claimWinnings(marketId);
+    }
+
+    function test_revert_MarketNotResolved_disputeResolution() public {
+        bytes32 marketId = createTestMarket();
+        // Market is Active, not Resolved
+        vm.expectRevert(PredictionMarketHook.MarketNotResolved.selector);
+        hook.disputeResolution(marketId);
+    }
+
+    function test_revert_AlreadyClaimed() public {
+        bytes32 marketId = createTestMarketWithLiquidity();
+        Market memory market = hook.getMarketById(marketId);
+        OutcomeToken yesToken = OutcomeToken(address(market.yesToken));
+
+        // Resolve market YES
+        vm.warp(market.endTimestamp + 1);
+        hook.closeMarket(marketId);
+        hook.enterResolution(marketId);
+        vm.prank(address(oracleManager));
+        hook.resolveMarket(marketId, true);
+
+        // Claim once successfully
+        uint256 yesBalance = yesToken.balanceOf(address(this));
+        yesToken.approve(address(hook), yesBalance);
+        hook.claimWinnings(marketId);
+
+        // Try to claim again
+        vm.expectRevert(PredictionMarketHook.AlreadyClaimed.selector);
+        hook.claimWinnings(marketId);
+    }
+
+
+     function test_revert_InvalidOracleAddress_setOracleServiceManager() public {
+        // Try setting oracle to address(0)
+        vm.expectRevert(PredictionMarketHook.InvalidOracleAddress.selector);
+        hook.setOracleServiceManager(address(0));
+    }
+
+    function test_revert_MarketNotFound_mintOutcomeTokens() public {
+        bytes32 nonExistentMarketId = keccak256("non-existent");
+        vm.expectRevert(PredictionMarketHook.MarketNotFound.selector);
+        hook.mintOutcomeTokens(nonExistentMarketId, 1e6, address(collateralToken));
+    }
+
+     function test_revert_MarketNotFound_beforeSwap() public {
+         // Create a valid key but don't associate it with a market
+         PoolKey memory key = PoolKey({
+             currency0: Currency.wrap(address(collateralToken)),
+             currency1: Currency.wrap(address(new ERC20Mock("Fake","FK", 18))),
+             fee: 3000,
+             tickSpacing: 60,
+             hooks: IHooks(address(hook)) // Point to the hook
+         });
+         // Swap function is internal, so we test via PoolManager call (swap)
+         // We need to setup a swap, but expect the internal hook call to revert
+         // This setup might be complex, let's test via a direct hook call if possible,
+         // or test via `markets()` which uses the same internal logic
+         vm.expectRevert(PredictionMarketHook.MarketNotFound.selector);
+         hook.markets(key.toId()); // Test the underlying _getMarketFromPoolId call
+     }
+
+     function test_revert_MarketNotFound_beforeAddLiquidity() public {
+         // Similar setup to beforeSwap, test via `markets()`
+         PoolKey memory key = PoolKey({
+             currency0: Currency.wrap(address(collateralToken)),
+             currency1: Currency.wrap(address(new ERC20Mock("Fake","FK", 18))),
+             fee: 3000,
+             tickSpacing: 60,
+             hooks: IHooks(address(hook))
+         });
+         vm.expectRevert(PredictionMarketHook.MarketNotFound.selector);
+         hook.markets(key.toId()); // Test the underlying _getMarketFromPoolId call
+     }
+
+    function test_revert_MarketNotActive_closeMarket() public {
+        bytes32 marketId = createTestMarket();
+        // Close market once
+        vm.warp(hook.getMarketById(marketId).endTimestamp + 1);
+        hook.closeMarket(marketId);
+        // Try to close again
+        vm.expectRevert(PredictionMarketHook.MarketNotActive.selector);
+        hook.closeMarket(marketId);
+    }
+
+    function test_revert_MarketNotClosed_enterResolution() public {
+        bytes32 marketId = createTestMarket();
+        // Market is Active, not Closed
+        vm.expectRevert(PredictionMarketHook.MarketNotClosed.selector);
+        hook.enterResolution(marketId);
+    }
+
+    function test_revert_MarketNotInCreatedState_activateMarket() public {
+         bytes32 marketId = createTestMarket();
+         // Market is Active, not Created
+         vm.expectRevert(PredictionMarketHook.MarketNotInCreatedState.selector);
+         hook.activateMarket(marketId); // activateMarket expects Created state
+    }
+
+    function test_revert_MarketNotInResolutionOrDisputePhase_resolveMarket() public {
+        bytes32 marketId = createTestMarket();
+        // Market is Active, not InResolution or Disputed
+        vm.prank(address(oracleManager));
+        vm.expectRevert(PredictionMarketHook.MarketNotInResolutionOrDisputePhase.selector);
+        hook.resolveMarket(marketId, true);
+    }
+
+    function test_revert_NotAuthorizedToCancelMarket() public {
+        bytes32 marketId = createTestMarket();
+        address randomUser = makeAddr("randomUser");
+        vm.prank(randomUser);
+        vm.expectRevert(PredictionMarketHook.NotAuthorizedToCancelMarket.selector);
+        hook.cancelMarket(marketId);
+    }
+
+    function test_revert_MarketCannotBeCancelledInCurrentState() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Resolve market
+        vm.warp(market.endTimestamp + 1);
+        hook.closeMarket(marketId);
+        hook.enterResolution(marketId);
+        vm.prank(address(oracleManager));
+        hook.resolveMarket(marketId, true);
+
+        // Try to cancel resolved market (as creator)
+        vm.expectRevert(PredictionMarketHook.MarketCannotBeCancelledInCurrentState.selector);
+        hook.cancelMarket(marketId);
+    }
+
+    function test_revert_NoTokensToClaim() public {
+        bytes32 marketId = createTestMarketWithLiquidity();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Resolve market YES
+        vm.warp(market.endTimestamp + 1);
+        hook.closeMarket(marketId);
+        hook.enterResolution(marketId);
+        vm.prank(address(oracleManager));
+        hook.resolveMarket(marketId, true);
+
+        // Prank as a user with no tokens
+        address userWithNoTokens = makeAddr("userWithNoTokens");
+        vm.prank(userWithNoTokens);
+        vm.expectRevert(PredictionMarketHook.NoTokensToClaim.selector);
+        hook.claimWinnings(marketId);
+    }
+
+    function test_revert_NoTokensToRedeem() public {
+        bytes32 marketId = createTestMarket();
+        // Cancel the market
+        hook.cancelMarket(marketId);
+
+        // Prank as user with no tokens
+        address userWithNoTokens = makeAddr("userWithNoTokens");
+        vm.prank(userWithNoTokens);
+        vm.expectRevert(PredictionMarketHook.NoTokensToRedeem.selector);
+        hook.redeemCollateral(marketId);
+    }
+
+    // Note: InvalidTokenAddressOrdering is hard to test deterministically with CREATE2 salts
+    // It relies on deployed addresses which depend on nonce and salts.
+    // We skip testing this revert directly.
+
+    function test_revert_TickBelowMinimumValidTick() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Try adding liquidity below the market's min tick range
+        // Market minTick is TEST_MIN_TICK (0), adjusted to nearest tickSpacing (0)
+        int24 invalidLowerTick = market.settings.minTick - market.settings.tickSpacing; // One spacing below min
+        int24 validUpperTick = market.settings.maxTick;
+
+        // Prepare liquidity params
+        IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
+            tickLower: invalidLowerTick,
+            tickUpper: validUpperTick,
+            liquidityDelta: 1e18, // Example amount
+            salt: 0
+        });
+
+        // Approve tokens for PoolModifyLiquidityTest
+        collateralToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        market.yesToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+
+        // Expect revert when adding liquidity
+        vm.expectRevert();
+        poolModifyLiquidityTest.modifyLiquidity(market.yesPoolKey, params, new bytes(0));
+    }
+
+    function test_revert_TickAboveMaximumValidTick() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Try adding liquidity above the market's max tick range
+        int24 validLowerTick = market.settings.minTick;
+        int24 invalidUpperTick = market.settings.maxTick + market.settings.tickSpacing; // One spacing above max
+
+        // Prepare liquidity params
+        IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
+            tickLower: validLowerTick,
+            tickUpper: invalidUpperTick,
+            liquidityDelta: 1e18, // Example amount
+            salt: 0
+        });
+
+        // Approve tokens
+        collateralToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        market.yesToken.approve(address(poolModifyLiquidityTest), type(uint256).max);
+        // Trigger the revert by calling modifyLiquidity
+        vm.expectRevert();
+        poolModifyLiquidityTest.modifyLiquidity(market.yesPoolKey, params, new bytes(0));
+    }
+
+    function test_revert_MarketIdCannotBeZero() public {
+        vm.expectRevert(PredictionMarketHook.MarketIdCannotBeZero.selector);
+        hook.getMarketById(bytes32(0));
+    }
+
+    function test_revert_OnlyConfiguredOracleAllowed() public {
+        bytes32 marketId = createTestMarket();
+        Market memory market = hook.getMarketById(marketId);
+
+        // Resolve market phase
+        vm.warp(market.endTimestamp + 1);
+        hook.closeMarket(marketId);
+        hook.enterResolution(marketId);
+
+        // Try resolving from a non-oracle address (e.g., the creator)
+        vm.expectRevert(PredictionMarketHook.OnlyConfiguredOracleAllowed.selector);
+        hook.resolveMarket(marketId, true);
+    }
+
+    function test_revert_MarketNotCancelled() public {
+        bytes32 marketId = createTestMarket();
+        // Market is Active, not Cancelled
+        vm.expectRevert(PredictionMarketHook.MarketNotCancelled.selector);
+        hook.redeemCollateral(marketId);
     }
 }

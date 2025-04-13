@@ -198,6 +198,7 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
         address collateral = params.collateralAddress;
         OutcomeToken yesToken;
         OutcomeToken noToken;
+        _marketCount += 1;
 
         // Keep trying different salts until we get tokens with higher addresses than collateral
         uint256 attempts = 0;
@@ -538,29 +539,57 @@ contract PredictionMarketHook is BaseHook, IPredictionMarketHook, Ownable, Reent
         emit WinningsClaimed(marketId, sender, claimAmount);
     }
 
-    /// @notice Allows users to redeem their collateral if the market is cancelled
+    /// @notice Allows users to redeem their collateral if the market is cancelled.
+    /// @dev Each YES and NO token held is redeemed for 1/2 of the corresponding collateral unit's value.
     /// @param marketId The ID of the market
     function redeemCollateral(bytes32 marketId) external override nonReentrant {
         Market storage market = _markets[marketId];
+        // --- Checks ---
         if (market.state != MarketState.Cancelled) {
             revert MarketNotCancelled();
         }
-        uint256 yesBalance = market.yesToken.balanceOf(msg.sender);
-        uint256 noBalance = market.noToken.balanceOf(msg.sender);
+
+        address sender = msg.sender; // Cache msg.sender
+        uint256 yesBalance = market.yesToken.balanceOf(sender);
+        uint256 noBalance = market.noToken.balanceOf(sender);
+
+        // Calculate total tokens held by the user
         uint256 totalTokens = yesBalance + noBalance;
+
         if (totalTokens == 0) {
-            revert NoTokensToRedeem();
+            revert NoTokensToRedeem(); // User has no tokens to redeem
         }
+
+        // Calculate the redemption amount
+        // 1 Collateral Unit initially minted `decimalAdjustment` YES and `decimalAdjustment` NO tokens.
+        // So, 1 Collateral Unit corresponds to `2 * decimalAdjustment` total tokens.
+        // The value of 1 token (YES or NO) upon cancellation is (1 / (2 * decimalAdjustment)) Collateral Units.
+        // Total Redeem Amount = totalTokens * (Value of 1 token)
+        // Total Redeem Amount = totalTokens / (2 * decimalAdjustment)
         uint256 collateralDecimals = IERC20Metadata(market.collateralAddress).decimals();
-        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals);
-        uint256 redeemAmount = totalTokens / decimalAdjustment;
+        uint256 decimalAdjustment = 10 ** (18 - collateralDecimals); // Outcome tokens are always 18 decimals
+        uint256 redeemAmount = totalTokens / (2 * decimalAdjustment); // Each token is worth half the collateral value
+
+        // --- Effects ---
+        // State changes (burning tokens) happen before external call (transfer)
+
+        // --- Interactions ---
+        // Burn ALL YES and NO tokens held by the user.
+        // User must have approved the hook beforehand for both tokens.
         if (yesBalance > 0) {
-            market.yesToken.burnFrom(msg.sender, yesBalance);
+            market.yesToken.burnFrom(sender, yesBalance);
         }
         if (noBalance > 0) {
-            market.noToken.burnFrom(msg.sender, noBalance);
+            market.noToken.burnFrom(sender, noBalance);
         }
-        IERC20(market.collateralAddress).safeTransfer(msg.sender, redeemAmount);
+
+        // Transfer the calculated collateral amount to the user
+        // Only transfer if there's an amount to transfer (should always be > 0 if totalTokens > 0)
+        if (redeemAmount > 0) {
+             IERC20(market.collateralAddress).safeTransfer(sender, redeemAmount);
+        }
+
+        // Emit an event if desired, e.g., CollateralRedeemed(marketId, sender, redeemAmount);
     }
 
     /// @notice Gets market details for a given pool ID.
