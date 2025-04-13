@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {PoolCreationHelper} from "../src/PoolCreationHelper.sol";
-import {CreateMarketParams} from "../src/types/MarketTypes.sol";
+import {CreateMarketParams, MarketSetting} from "../src/types/MarketTypes.sol";
 import "forge-std/console.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
@@ -34,6 +34,13 @@ contract DeployTestMarkets is Script {
 
     // --- Configuration ---
     uint256 public constant INITIAL_MARKET_COLLATERAL = 100 * 1e6; // 100 USDC (assuming 6 decimals) collateral for market creation.
+
+    // Market settings constants
+    uint24 public constant MARKET_FEE = 3000; // 0.3% fee tier
+    int24 public constant MARKET_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
+    int24 public constant MARKET_STARTING_TICK = 6900; // ~0.5 USDC or 1 USDC = 2 YES
+    int24 public constant MARKET_MIN_TICK = 0; // Minimum tick (adjusted by tickSpacing in hook)
+    int24 public constant MARKET_MAX_TICK = 207300; // Maximum tick (adjusted by tickSpacing in hook)
 
     // --- Script State ---
     address private deployer; // Address executing the script.
@@ -110,6 +117,15 @@ contract DeployTestMarkets is Script {
         collateralToken.approve(address(hook), type(uint256).max);
         console.log("Approved hook to spend test USDC for market creation");
 
+        // Create a MarketSetting struct to use for both markets
+        MarketSetting memory settings = MarketSetting({
+            fee: MARKET_FEE,
+            tickSpacing: MARKET_TICK_SPACING,
+            startingTick: MARKET_STARTING_TICK,
+            minTick: MARKET_MIN_TICK,
+            maxTick: MARKET_MAX_TICK
+        });
+
         // --- Market 1 ---
         CreateMarketParams memory params1 = CreateMarketParams({
             oracle: deployer,
@@ -119,7 +135,7 @@ contract DeployTestMarkets is Script {
             title: "SCRIPT: Will DoE be dismantled by Dec 31, 2025?", // Added prefix
             description: "Test Market 1 created by DeployTestMarkets script.",
             duration: 1 hours,
-            curveId: 0
+            settings: settings // Add the settings field
         });
         console.log("Creating Market 1 ('DoE Dismantled')...");
         bytes32 marketId1 = hook.createMarketAndDepositCollateral(params1);
@@ -140,7 +156,7 @@ contract DeployTestMarkets is Script {
             title: "SCRIPT: Will U.S. acquire Greenland by Dec 31, 2025?", // Added prefix
             description: "Test Market 2 created by DeployTestMarkets script.",
             duration: 1 hours,
-            curveId: 0
+            settings: settings // Add the settings field
         });
         console.log("Creating Market 2 ('Greenland Acquired')...");
         bytes32 marketId2 = hook.createMarketAndDepositCollateral(params2);
@@ -152,4 +168,7 @@ contract DeployTestMarkets is Script {
         require(state2 == MarketState.Active, "Market 2 not immediately active after creation!");
         // *** End check ***
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

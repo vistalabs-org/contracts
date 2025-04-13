@@ -173,4 +173,7 @@ contract TestMarketClaim is Script {
 
         vm.stopBroadcast();
     }
+
+    // add this to be excluded from coverage report
+    function test() public {}
 }

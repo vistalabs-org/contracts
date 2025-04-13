@@ -18,7 +18,7 @@ contract PoolCreationHelper {
         poolManager = IPoolManager(_poolManager);
     }
     // for only YES/NO tokens
-
+    /*
     function createUniswapPoolWithoutCollateral(PoolKey memory pool) external returns (PoolKey memory) {
         // yes no at same price
 
@@ -31,11 +31,14 @@ contract PoolCreationHelper {
         console.log("Pool created");
 
         return pool;
-    }
+    }*/
     // for collateral token as token0 or token1
 
-    function createUniswapPoolWithCollateral(PoolKey memory pool) external returns (PoolKey memory) {
-        uint160 pricePoolQ = TickMath.getSqrtPriceAtTick(6900);
+    function createUniswapPoolWithCollateral(PoolKey memory pool, int24 initialTick)
+        external
+        returns (PoolKey memory)
+    {
+        uint160 pricePoolQ = TickMath.getSqrtPriceAtTick(initialTick);
 
         console.log("Pool price SQRTX96: %d", pricePoolQ);
 
