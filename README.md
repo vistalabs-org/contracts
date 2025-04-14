@@ -33,15 +33,15 @@
 | Contract | Address |
 |----------|---------|
 | Deployer | `0x6786B1148E0377BEFe86fF46cc073dE96B987FE4` |
-| Collateral Token | `0xA5a2250b0170bdb9bd0904C0440717f00A506023` |
+| Collateral Token | `0xBb48FF1fae56784175bEF7Fc7eA79e048D3Aeb7d` |
 | Pool Manager | `0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32` |
 | Pool Swap Test | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
-| AI Agent Registry | `0xB5fF28b7E3eB8D70f456D5afcaeBc40210d25284` |
-| AI Oracle Service Manager Implementation | `0x871F75C1cE8776768E92A81604eDec5716137c81` |
-| AI Oracle Service Manager Proxy | `0xf2F14993D8744d3b7bf2ea0ECe03665e9a7f9298` |
-| AI Agent | `0xe87B112662F877B2C947B309233D025F7EAD3c4D` |
-| Pool Creation Helper | `0x43B7819F4A66532Ad028B34D1Fe28eCC1dEAD820` |
-| Prediction Market Hook | `0x910dE1AD16339a47CEa7b9a2651B09d6E58DC880` |
+| AI Agent Registry | `0xd65301dBf6C46B8271027Ea289F1e35137367d02` |
+| AI Oracle Service Manager Implementation | `0xcCF5cCE71f48d136C0C5a078f74686D5A4920C86` |
+| AI Oracle Service Manager Proxy | `0xfe848F197cB019a8F8F1f5d6aBA95fc2EDeAa1e3` |
+| AI Agent | `0x6E972A2764384e475259E630AD8E7b77aD545bbF` |
+| Pool Creation Helper | `0x9eD200cd16dc4e77DCeE32cAB29A49C7cB6917b3` |
+| Prediction Market Hook | `0xAf2b900761ed56500d5CE6964B815A81171E0880` |
 
 These addresses are deployed on Arbitrum (Chain ID: 42161).
 
