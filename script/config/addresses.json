@@ -2,6 +2,7 @@
   "chainId": 42161,
   "deployer": "0x6786B1148E0377BEFe86fF46cc073dE96B987FE4",
   "collateralToken": "0xBb48FF1fae56784175bEF7Fc7eA79e048D3Aeb7d",
+  "collateralTokenWithCap" : "0x5e458eE969e6336A7eF1716601d50b7E3C15499D",
   "poolManager": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
   "poolSwapTest": "0x9140a78c1A137c7fF1c151EC8231272aF78a99A4",
   "aiAgentRegistry": "0xd65301dBf6C46B8271027Ea289F1e35137367d02",
