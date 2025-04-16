@@ -7,7 +7,7 @@ import {ERC20MockWithCap} from "../test/utils/ERC20MockWithCap.sol"; // Adjust p
 contract DeployMockTokenWithCap is Script {
     string constant TOKEN_NAME = "Test Token";
     string constant TOKEN_SYMBOL = "TST";
-    uint8 constant TOKEN_DECIMALS = 18;
+    uint8 constant TOKEN_DECIMALS = 6;
     // MAX_MINT_PER_WALLET is immutable in the contract
     uint256 constant INITIAL_MINT_AMOUNT = 1_000_000 * 10**TOKEN_DECIMALS; // 1 Million tokens
 

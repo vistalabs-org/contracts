@@ -33,7 +33,7 @@ contract ApprovePermit2 is Script {
 
     /// @notice Main script execution function.
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("UNISWAP_PK");
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         deployer = vm.addr(deployerPrivateKey);
         console.log("Script runner (Deployer):", deployer);
 
@@ -85,9 +85,9 @@ contract ApprovePermit2 is Script {
         console.log("\n--- Loading Contract Addresses ---");
         string memory json = vm.readFile("script/config/addresses.json");
 
-        address permit2Addr = json.readAddress(".permit2"); // <<< ENSURE THIS KEY EXISTS
-        address posMgrAddr = json.readAddress(".positionManager");
-        address collateralAddr = json.readAddress(".collateralToken");
+        address permit2Addr = address(0x000000000022D473030F116dDEE9F6B43aC78BA3); // <<< ENSURE THIS KEY EXISTS
+        address posMgrAddr = address(0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869);
+        address collateralAddr = address(0xBb48FF1fae56784175bEF7Fc7eA79e048D3Aeb7d);
         address hookAddress = json.readAddress(".predictionMarketHook");
 
         require(permit2Addr != address(0), "Failed to read permit2 address");
@@ -135,6 +135,7 @@ contract ApprovePermit2 is Script {
         );
         // Approve PositionManager to spend deployer's tokens via Permit2
         permit2.approve(tokenAddress, positionManagerAddress, MAX_APPROVAL_AMOUNT, NO_EXPIRATION);
+        permit2.approve(tokenAddress, address(0xA51afAFe0263b40EdaEf0Df8781eA9aa03E381a3), MAX_APPROVAL_AMOUNT, NO_EXPIRATION);
     }
 
     // add this to be excluded from coverage report

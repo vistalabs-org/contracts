@@ -34,6 +34,7 @@
 |----------|---------|
 | Deployer | `0x6786B1148E0377BEFe86fF46cc073dE96B987FE4` |
 | Collateral Token | `0xBb48FF1fae56784175bEF7Fc7eA79e048D3Aeb7d` |
+| Collateral Token with cap | `0x653C9042b96372Deaa114e48B973163DBdC44812` |
 | Pool Manager | `0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32` |
 | Pool Swap Test | `0x9140a78c1A137c7fF1c151EC8231272aF78a99A4` |
 | AI Agent Registry | `0xd65301dBf6C46B8271027Ea289F1e35137367d02` |

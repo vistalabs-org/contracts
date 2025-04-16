@@ -41,9 +41,9 @@ contract AddLiquidity is Script {
     ERC20Mock public collateralToken;
 
     // Market settings constants
-    uint24 public constant MARKET_FEE = 3000; // 0.3% fee tier
-    int24 public constant MARKET_TICK_SPACING = 60; // Corresponding to 0.3% fee tier
-    int24 public constant MARKET_MIN_TICK = 0; // Minimum tick
+    uint24 public constant MARKET_FEE = 1000; // 0.3% fee tier
+    int24 public constant MARKET_TICK_SPACING = 10; // Corresponding to 0.3% fee tier
+    int24 public constant MARKET_MIN_TICK = 380000; // Minimum tick
     int24 public constant MARKET_MAX_TICK = 207000; // Maximum tick
 
     // --- Script State ---
@@ -71,8 +71,8 @@ contract AddLiquidity is Script {
         string memory json = vm.readFile("script/config/addresses.json");
 
         address hookAddress = json.readAddress(".predictionMarketHook");
-        address positionManagerAddress = json.readAddress(".positionManager");
-        address collateralAddr = json.readAddress(".collateralToken");
+        address positionManagerAddress = address(0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869);
+        address collateralAddr = address(0x5e458eE969e6336A7eF1716601d50b7E3C15499D);
 
         require(hookAddress != address(0), "Failed to read hook address");
         require(positionManagerAddress != address(0), "Failed to read positionManager address from addresses.json");
@@ -100,7 +100,7 @@ contract AddLiquidity is Script {
 
         // // --- Process Each Market --- //
         // for (uint256 i = 0; i < numMarkets; i++) {
-        bytes32 marketId = fetchedMarketIds[0];
+        bytes32 marketId = fetchedMarketIds[1];
         console.log("\nProcessing Market ID:", vm.toString(marketId));
 
         Market memory market = hook.getMarketById(marketId);
@@ -138,7 +138,7 @@ contract AddLiquidity is Script {
         bytes[] memory params = new bytes[](2);
 
         params[0] = abi.encode(
-            poolKey, settings.minTick, settings.maxTick, 0.000001 ether, 1 ether, 1 ether, deployer, bytes("")
+            poolKey, settings.minTick, settings.maxTick, 0.01 ether, 100000 ether, 100000 ether, deployer, bytes("")
         );
         params[1] = abi.encode(poolKey.currency0, poolKey.currency1);
 
